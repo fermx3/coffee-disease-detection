@@ -2,7 +2,14 @@
 
 .DEFAULT_GOAL := default
 
+PY=python
+PIP=pip
+
 #################### PACKAGE ACTIONS ###################
+#Instala dependencias
+install:
+	$(PIP) install -r requirements.txt
+
 reinstall_package:
 	@pip uninstall -y coffeedd || :
 	@pip install -e .
@@ -15,6 +22,19 @@ run_split_resized_dataset:
 
 #################### DEFAULT ACTIONS ###################
 default: pylint pytest
+
+#################  CODE QUALITY  #####################
+#Limpia y corrige código
+format:
+	black .
+	ruff check . --fix
+
+#Ejecuta test
+test:
+	pytest -q
+
+#Ejecuta format + test
+quality: format test
 
 pylint:
 	find . -iname "*.py" -not -path "./tests/*" | xargs -n1 -I {}  pylint --output-format=colorized {}; true
@@ -31,28 +51,10 @@ map_paths_and_labels:
 
 preprocess_raw_letterbox_224:
 	@python coffeedd/utilities/export_preprocessed_images.py --src data/raw_data --dst data/processed_data/resized_224 --target 224 --policy letterbox --clean-output
-PY=python
-PIP=pip
-
-#Instala dependencias
-install:
-	$(PIP) install -r requirements.txt
-
-#Limpia y corrige código
-format:
-	black .
-	ruff check . --fix
-
-#Ejecuta test
-test:
-	pytest -q
 
 #corre análisis base
-eda:
-	$(PY) coffeed/utilities/image-organizer.py
-
-#Ejecuta format + test
-quality: format test
+# eda:
+# 	$(PY) coffeed/utilities/image-organizer.py
 
 #Ejecuta todo el flujo
 all: install quality eda

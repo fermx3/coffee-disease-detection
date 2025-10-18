@@ -53,12 +53,20 @@ def find_file(root: Path, filename: str) -> Path | None:
     return None
 
 
-def divide_images(excel_path: Path, src_dir: Path, dest_dir: Path,
-                  file_col: str = "File", subclass_col: str = "Multiclass.Label",
-                  sheet_name: str | None = None, move: bool = False) -> None:
+def divide_images(
+    excel_path: Path,
+    src_dir: Path,
+    dest_dir: Path,
+    file_col: str = "File",
+    subclass_col: str = "Multiclass.Label",
+    sheet_name: str | None = None,
+    move: bool = False,
+) -> None:
     df = pd.read_excel(excel_path, sheet_name=sheet_name, dtype=str)
     if file_col not in df.columns or subclass_col not in df.columns:
-        print(f"Columnas esperadas no encontradas en el Excel. Columnas: {list(df.columns)}")
+        print(
+            f"Columnas esperadas no encontradas en el Excel. Columnas: {list(df.columns)}"
+        )
         sys.exit(1)
 
     src_dir = src_dir.expanduser().resolve()
@@ -96,22 +104,49 @@ def divide_images(excel_path: Path, src_dir: Path, dest_dir: Path,
             else:
                 shutil.copy2(str(found), str(dest_path))
             moved += 1
-            print(f"[OK] {found.relative_to(src_dir)} -> {target_dir.name}/{found.name}")
+            print(
+                f"[OK] {found.relative_to(src_dir)} -> {target_dir.name}/{found.name}"
+            )
         except Exception as e:
             print(f"[ERROR] al copiar/mover {found}: {e}")
 
-    print(f"\nResumen: total filas procesadas={total}, copiados/movidos={moved}, faltantes={missing}")
+    print(
+        f"\nResumen: total filas procesadas={total}, copiados/movidos={moved}, faltantes={missing}"
+    )
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Dividir imágenes en subcarpetas según columna 'Multiclass.Label' en un Excel.")
+    p = argparse.ArgumentParser(
+        description="Dividir imágenes en subcarpetas según columna 'Multiclass.Label' en un Excel."
+    )
     p.add_argument("--excel", "-x", required=True, help="Ruta al archivo Excel (.xlsx)")
-    p.add_argument("--src", "-s", required=True, help="Carpeta raíz donde buscar las imágenes")
-    p.add_argument("--dest", "-d", required=True, help="Carpeta destino donde crear subcarpetas por subclass")
-    p.add_argument("--file-col", default="File", help="Nombre de la columna que contiene el nombre de archivo (por defecto: File)")
-    p.add_argument("--subclass-col", default="Multiclass.Label", help="Nombre de la columna con la subclase (por defecto: Multiclass.Label)")
-    p.add_argument("--sheet", default=None, help="Nombre o índice de la hoja en el Excel (opcional)")
-    p.add_argument("--move", action="store_true", help="Mover archivos en vez de copiarlos")
+    p.add_argument(
+        "--src", "-s", required=True, help="Carpeta raíz donde buscar las imágenes"
+    )
+    p.add_argument(
+        "--dest",
+        "-d",
+        required=True,
+        help="Carpeta destino donde crear subcarpetas por subclass",
+    )
+    p.add_argument(
+        "--file-col",
+        default="File",
+        help="Nombre de la columna que contiene el nombre de archivo (por defecto: File)",
+    )
+    p.add_argument(
+        "--subclass-col",
+        default="Multiclass.Label",
+        help="Nombre de la columna con la subclase (por defecto: Multiclass.Label)",
+    )
+    p.add_argument(
+        "--sheet",
+        default=None,
+        help="Nombre o índice de la hoja en el Excel (opcional)",
+    )
+    p.add_argument(
+        "--move", action="store_true", help="Mover archivos en vez de copiarlos"
+    )
     return p.parse_args()
 
 

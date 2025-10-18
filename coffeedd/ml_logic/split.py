@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple, Optional
 from coffeedd.params import *
 
 # Intenta obtener rutas por defecto desde params.py
-if 'LOCAL_RAW_DATA_PATH' in globals() and 'LOCAL_DATA_PATH' in globals():
+if "LOCAL_RAW_DATA_PATH" in globals() and "LOCAL_DATA_PATH" in globals():
     LOCAL_RAW_DATA_PATH = Path(LOCAL_RAW_DATA_PATH)
     LOCAL_PROCESSED_DATA_PATH = Path(LOCAL_DATA_PATH)
 else:
@@ -14,12 +14,16 @@ else:
     LOCAL_RAW_DATA_PATH = Path("data/raw_data")
     LOCAL_PROCESSED_DATA_PATH = Path("data/process_data")
 
-def _gather_images(folder: Path, patterns: Tuple[str, ...], recursive: bool = True) -> List[Path]:
+
+def _gather_images(
+    folder: Path, patterns: Tuple[str, ...], recursive: bool = True
+) -> List[Path]:
     files: List[Path] = []
     for pat in patterns:
         it = folder.rglob(pat) if recursive else folder.glob(pat)
         files.extend([p for p in it if p.is_file()])
     return files
+
 
 def split_dataset(
     src_root: Optional[Path | str] = None,
@@ -56,7 +60,9 @@ def split_dataset(
         raise FileNotFoundError(f"Directorio de origen no válido: {src_root}")
 
     if src_root == output_root or str(output_root).startswith(str(src_root)):
-        raise ValueError("output_root no debe estar dentro de src_root (evita contaminar el origen).")
+        raise ValueError(
+            "output_root no debe estar dentro de src_root (evita contaminar el origen)."
+        )
 
     # Limpieza opcional
     if clean_output and output_root.exists():
@@ -66,7 +72,9 @@ def split_dataset(
 
     # Detectar clases: subcarpetas directas (excluye nombres de splits)
     excluded = {"train", "val", "test", ".DS_Store"}
-    class_dirs = [d for d in src_root.iterdir() if d.is_dir() and d.name not in excluded]
+    class_dirs = [
+        d for d in src_root.iterdir() if d.is_dir() and d.name not in excluded
+    ]
     if not class_dirs:
         raise ValueError(f"No se encontraron subcarpetas de clases en {src_root}")
 
@@ -75,7 +83,12 @@ def split_dataset(
     summary = {
         "root": str(src_root),
         "output": str(output_root),
-        "params": {"test_size": test_size, "val_size": val_size, "move": move, "seed": seed},
+        "params": {
+            "test_size": test_size,
+            "val_size": val_size,
+            "move": move,
+            "seed": seed,
+        },
         "splits": {"train": 0, "val": 0, "test": 0},
         "classes": {},
     }
@@ -101,8 +114,8 @@ def split_dataset(
                 n_val -= 1
 
         test_idx = set(idx[:n_test])
-        val_idx = set(idx[n_test:n_test + n_val])
-        train_idx = set(idx[n_test + n_val:])
+        val_idx = set(idx[n_test : n_test + n_val])
+        train_idx = set(idx[n_test + n_val :])
 
         # Crear carpetas destino por clase
         for split in ("train", "val", "test"):

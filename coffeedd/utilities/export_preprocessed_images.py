@@ -13,6 +13,7 @@ try:
 except Exception as e:
     raise RuntimeError("Pillow es requerido. Instala con: pip install pillow") from e
 
+
 @dataclass
 class ExportSummary:
     src_root: str
@@ -26,12 +27,16 @@ class ExportSummary:
     kept_format: bool
     dst_ext: Optional[str]
 
-def _iter_images(root: Path, patterns: Sequence[str], recursive: bool = True) -> Iterable[Path]:
+
+def _iter_images(
+    root: Path, patterns: Sequence[str], recursive: bool = True
+) -> Iterable[Path]:
     for pat in patterns:
         it = root.rglob(pat) if recursive else root.glob(pat)
         for p in it:
             if p.is_file():
                 yield p
+
 
 def _ensure_rgb(img: Image.Image, bg=(128, 128, 128)) -> Image.Image:
     # Orientación EXIF correcta
@@ -47,7 +52,10 @@ def _ensure_rgb(img: Image.Image, bg=(128, 128, 128)) -> Image.Image:
         return bg_img
     return img.convert("RGB")
 
-def _letterbox_square(img: Image.Image, target: int, pad_value: int = 128) -> Image.Image:
+
+def _letterbox_square(
+    img: Image.Image, target: int, pad_value: int = 128
+) -> Image.Image:
     w, h = img.size
     if w == 0 or h == 0:
         return Image.new("RGB", (target, target), (pad_value, pad_value, pad_value))
@@ -60,6 +68,7 @@ def _letterbox_square(img: Image.Image, target: int, pad_value: int = 128) -> Im
     canvas.paste(resized, (left, top))
     return canvas
 
+
 def _center_crop_square(img: Image.Image, target: int) -> Image.Image:
     w, h = img.size
     side = min(w, h)
@@ -68,10 +77,18 @@ def _center_crop_square(img: Image.Image, target: int) -> Image.Image:
     cropped = img.crop((left, top, left + side, top + side))
     return cropped.resize((target, target), Image.Resampling.BICUBIC)
 
+
 def _resize_stretch(img: Image.Image, target: int) -> Image.Image:
     return img.resize((target, target), Image.Resampling.BICUBIC)
 
-def _dst_path_for(src_path: Path, src_root: Path, dst_root: Path, keep_format: bool, dst_ext: Optional[str]) -> Path:
+
+def _dst_path_for(
+    src_path: Path,
+    src_root: Path,
+    dst_root: Path,
+    keep_format: bool,
+    dst_ext: Optional[str],
+) -> Path:
     rel = src_path.relative_to(src_root)
     if keep_format and dst_ext is None:
         # mantener la extensión original
@@ -79,6 +96,7 @@ def _dst_path_for(src_path: Path, src_root: Path, dst_root: Path, keep_format: b
     # forzar extensión de salida
     ext = dst_ext if dst_ext is not None else ".jpg"
     return (dst_root / rel).with_suffix(ext.lower())
+
 
 def export_preprocessed_images(
     src_root: Path | str,
@@ -129,7 +147,18 @@ def export_preprocessed_images(
     paths = list(_iter_images(src_root, patterns, recursive=recursive))
     total = len(paths)
     if total == 0:
-        return ExportSummary(str(src_root), str(dst_root), 0, 0, 0, 0, policy, target, keep_format, dst_ext)
+        return ExportSummary(
+            str(src_root),
+            str(dst_root),
+            0,
+            0,
+            0,
+            0,
+            policy,
+            target,
+            keep_format,
+            dst_ext,
+        )
 
     def process_one(p: Path) -> Tuple[bool, Optional[str]]:
         try:
@@ -179,15 +208,32 @@ def export_preprocessed_images(
         dst_ext=dst_ext,
     )
 
+
 if __name__ == "__main__":
-    import argparse, json
+    import argparse
+    import json
+
     ap = argparse.ArgumentParser(description="Exportar imágenes preprocesadas a disco")
-    ap.add_argument("--src", required=True, help="Carpeta de entrada (p.ej. data/raw_data)")
-    ap.add_argument("--dst", required=True, help="Carpeta de salida (p.ej. data/processed_data/resized_224)")
+    ap.add_argument(
+        "--src", required=True, help="Carpeta de entrada (p.ej. data/raw_data)"
+    )
+    ap.add_argument(
+        "--dst",
+        required=True,
+        help="Carpeta de salida (p.ej. data/processed_data/resized_224)",
+    )
     ap.add_argument("--target", type=int, default=224)
-    ap.add_argument("--policy", choices=["letterbox", "center-crop", "resize"], default="letterbox")
-    ap.add_argument("--keep-format", action="store_true", help="Mantener extensión original")
-    ap.add_argument("--dst-ext", default=".jpg", help="Forzar extensión de salida si no mantienes formato")
+    ap.add_argument(
+        "--policy", choices=["letterbox", "center-crop", "resize"], default="letterbox"
+    )
+    ap.add_argument(
+        "--keep-format", action="store_true", help="Mantener extensión original"
+    )
+    ap.add_argument(
+        "--dst-ext",
+        default=".jpg",
+        help="Forzar extensión de salida si no mantienes formato",
+    )
     ap.add_argument("--quality", type=int, default=95)
     ap.add_argument("--clean-output", action="store_true")
     ap.add_argument("--workers", type=int, default=0)

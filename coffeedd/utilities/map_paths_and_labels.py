@@ -1,9 +1,9 @@
 from pathlib import Path
 from typing import List, Tuple, Sequence, Optional
 
-import tensorflow as tf
 
 from coffeedd.params import *
+
 
 def map_paths_and_labels(
     data_dir: Path | str,
@@ -49,7 +49,7 @@ def map_paths_and_labels(
     return image_paths, labels, class_names
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Ruta a la carpeta principal
     DATA_DIR = Path(LOCAL_DATA_PATH) / "train"
 

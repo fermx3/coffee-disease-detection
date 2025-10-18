@@ -3,26 +3,33 @@ from pathlib import Path
 from coffeedd.utilities.map_paths_and_labels import map_paths_and_labels
 
 IMAGENET_MEAN = tf.constant([0.485, 0.456, 0.406], tf.float32)
-IMAGENET_STD  = tf.constant([0.229, 0.224, 0.225], tf.float32)
+IMAGENET_STD = tf.constant([0.229, 0.224, 0.225], tf.float32)
 
-splits_dir = Path('data/processed_data')
+splits_dir = Path("data/processed_data")
 
-X_train, y_train, classes = map_paths_and_labels(splits_dir / 'train', recursive=True)
-X_val,   y_val,   _       = map_paths_and_labels(splits_dir / 'val',   recursive=True)
-X_test,  y_test,  _       = map_paths_and_labels(splits_dir / 'test',  recursive=True)
+X_train, y_train, classes = map_paths_and_labels(splits_dir / "train", recursive=True)
+X_val, y_val, _ = map_paths_and_labels(splits_dir / "val", recursive=True)
+X_test, y_test, _ = map_paths_and_labels(splits_dir / "test", recursive=True)
 
 print(f"Clases: {classes}")
 print(len(X_train), len(X_val), len(X_test))
 
+
 def decode_image(path):
     img_bytes = tf.io.read_file(path)
-    img = tf.io.decode_image(img_bytes, channels=0, expand_animations=False)  # autodetect
+    img = tf.io.decode_image(
+        img_bytes, channels=0, expand_animations=False
+    )  # autodetect
     # Asegurar 3 canales (RGB):
     ch = tf.shape(img)[-1]
-    img = tf.cond(tf.equal(ch, 1), lambda: tf.image.grayscale_to_rgb(img),
-           lambda: tf.cond(tf.equal(ch, 4), lambda: img[..., :3], lambda: img))
+    img = tf.cond(
+        tf.equal(ch, 1),
+        lambda: tf.image.grayscale_to_rgb(img),
+        lambda: tf.cond(tf.equal(ch, 4), lambda: img[..., :3], lambda: img),
+    )
     img = tf.image.convert_image_dtype(img, tf.float32)  # [0,1]
     return img
+
 
 def _random_resized_crop(img, target, seed):
     """Aproximación de RandomResizedCrop: escalar por lado corto y cropear aleatorio con rango de AR."""
@@ -35,7 +42,9 @@ def _random_resized_crop(img, target, seed):
 
     # Muestreamos AR y escala
     rnd = tf.random.stateless_uniform([2], seed)
-    ratio = tf.exp(tf.math.log(min_ratio) + (tf.math.log(max_ratio/min_ratio))*rnd[0])
+    ratio = tf.exp(
+        tf.math.log(min_ratio) + (tf.math.log(max_ratio / min_ratio)) * rnd[0]
+    )
     scale = min_scale + (max_scale - min_scale) * rnd[1]
 
     # Tamaño objetivo del crop en “pix originales”
@@ -51,7 +60,7 @@ def _random_resized_crop(img, target, seed):
         rnd2 = tf.random.stateless_uniform([2], seed + 1)
         y = tf.cast(rnd2[0] * tf.cast(max_y, tf.float32), tf.int32)
         x = tf.cast(rnd2[1] * tf.cast(max_x, tf.float32), tf.int32)
-        return img[y:y+crop_h, x:x+crop_w, :]
+        return img[y : y + crop_h, x : x + crop_w, :]
 
     def do_center_crop_from_short():
         # resize por lado corto y center crop a target
@@ -62,14 +71,16 @@ def _random_resized_crop(img, target, seed):
         img2 = tf.image.resize(img, (nh, nw), method="bicubic")
         off_y = (nh - target) // 2
         off_x = (nw - target) // 2
-        return img2[off_y:off_y+target, off_x:off_x+target, :]
+        return img2[off_y : off_y + target, off_x : off_x + target, :]
 
     ok = tf.logical_and(crop_h <= tf.shape(img)[0], crop_w <= tf.shape(img)[1])
     cropped = tf.cond(ok, do_random_crop, do_center_crop_from_short)
     return tf.image.resize(cropped, (target, target), method="bicubic")
 
+
 def normalize_imagenet(img):
     return (img - IMAGENET_MEAN) / IMAGENET_STD
+
 
 def _letterbox_to_square(img, target, pad_value=0.5):
     h = tf.cast(tf.shape(img)[0], tf.float32)
@@ -86,20 +97,32 @@ def _letterbox_to_square(img, target, pad_value=0.5):
     img = tf.pad(img, pad, constant_values=pad_value)
     return img
 
+
 def build_tf_dataset(
-    paths, labels, target=224, batch_size=32, training=True,
+    paths,
+    labels,
+    target=224,
+    batch_size=32,
+    training=True,
     policy="rrc",  # "rrc" (random-resized-crop) | "letterbox"
-    seed=42, shuffle_buffer=2048, num_parallel=tf.data.AUTOTUNE, cache=False
+    seed=42,
+    shuffle_buffer=2048,
+    num_parallel=tf.data.AUTOTUNE,
+    cache=False,
 ):
     ds = tf.data.Dataset.from_tensor_slices((paths, labels))
 
     if training:
-        ds = ds.shuffle(buffer_size=len(paths), seed=seed, reshuffle_each_iteration=True)
+        ds = ds.shuffle(
+            buffer_size=len(paths), seed=seed, reshuffle_each_iteration=True
+        )
 
     def _map(path, y):
         img = decode_image(path)
         if training and policy == "rrc":
-            img = _random_resized_crop(img, target, seed=tf.constant([seed, 0], tf.int32))
+            img = _random_resized_crop(
+                img, target, seed=tf.constant([seed, 0], tf.int32)
+            )
         else:
             img = _letterbox_to_square(img, target, pad_value=0.5)
         img = normalize_imagenet(img)
@@ -111,9 +134,22 @@ def build_tf_dataset(
     ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
     return ds
 
-train_ds = build_tf_dataset(X_train, y_train, target=224, batch_size=32, training=True,  policy="rrc",      seed=42)
-val_ds   = build_tf_dataset(X_val,   y_val,   target=224, batch_size=32, training=False, policy="letterbox", seed=42)
-test_ds  = build_tf_dataset(X_test,  y_test,  target=224, batch_size=32, training=False, policy="letterbox", seed=42)
+
+train_ds = build_tf_dataset(
+    X_train, y_train, target=224, batch_size=32, training=True, policy="rrc", seed=42
+)
+val_ds = build_tf_dataset(
+    X_val, y_val, target=224, batch_size=32, training=False, policy="letterbox", seed=42
+)
+test_ds = build_tf_dataset(
+    X_test,
+    y_test,
+    target=224,
+    batch_size=32,
+    training=False,
+    policy="letterbox",
+    seed=42,
+)
 
 # Ver un batch
 for imgs, ys in train_ds.take(1):
