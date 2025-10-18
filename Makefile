@@ -31,3 +31,28 @@ map_paths_and_labels:
 
 preprocess_raw_letterbox_224:
 	@python coffeedd/utilities/export_preprocessed_images.py --src data/raw_data --dst data/processed_data/resized_224 --target 224 --policy letterbox --clean-output
+PY=python
+PIP=pip
+
+#Instala dependencias
+install:
+	$(PIP) install -r requirements.txt
+
+#Limpia y corrige código
+format:
+	black .
+	ruff check . --fix
+
+#Ejecuta test
+test:
+	pytest -q
+
+#corre análisis base
+eda:
+	$(PY) coffeed/utilities/image-organizer.py
+
+#Ejecuta format + test
+quality: format test
+
+#Ejecuta todo el flujo
+all: install quality eda
