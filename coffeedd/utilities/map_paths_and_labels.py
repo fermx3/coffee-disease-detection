@@ -49,21 +49,22 @@ def map_paths_and_labels(
     return image_paths, labels, class_names
 
 
-# Ruta a la carpeta principal
-DATA_DIR = Path(LOCAL_DATA_PATH) / "train"
+if __name__ == '__main__':
+    # Ruta a la carpeta principal
+    DATA_DIR = Path(LOCAL_DATA_PATH) / "train"
 
-# Lista de clases (ordenadas alfabéticamente por defecto)
-class_names = sorted([item.name for item in DATA_DIR.glob("*") if item.is_dir()])
-print("Clases:", class_names)
+    # Lista de clases (ordenadas alfabéticamente por defecto)
+    class_names = sorted([item.name for item in DATA_DIR.glob("*") if item.is_dir()])
+    print("Clases:", class_names)
 
-# Mapear paths y labels
-all_image_paths = []
-all_labels = []
+    # Mapear paths y labels
+    all_image_paths = []
+    all_labels = []
 
-for idx, class_name in enumerate(class_names):
-    folder = DATA_DIR / class_name
-    for path in folder.glob("*.*"):  # acepta jpg, png, etc.
-        all_image_paths.append(str(path))
-        all_labels.append(idx)
+    for idx, class_name in enumerate(class_names):
+        folder = DATA_DIR / class_name
+        for path in folder.glob("*.*"):  # acepta jpg, png, etc.
+            all_image_paths.append(str(path))
+            all_labels.append(idx)
 
-print(f"Total imágenes: {len(all_image_paths)}")
+    print(f"Total imágenes: {len(all_image_paths)}")
