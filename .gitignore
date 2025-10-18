@@ -3,3 +3,11 @@ data/
 
 # MAcOS system files
 .DS_Store
+
+# Python cache files
+__pycache__/
+/ml_logic/__pycache__/
+/utilities/__pycache__/
+*.egg-info/
+*.egg
+*.eggs/
