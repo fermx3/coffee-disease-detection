@@ -7,7 +7,7 @@ requirements = [x.strip() for x in content if "git+" not in x]
 
 setup(name='coffeedd',
       version="0.0.1",
-      description="Coofee Disease Detection Package",
+      description="Coffee Disease Detection Package",
       license="MIT",
       author="Le Wagon Coffee Team",
       author_email="coffeesolutionapp@gmail.com",
