@@ -14,8 +14,6 @@ else:
     LOCAL_RAW_DATA_PATH = Path("data/raw_data")
     LOCAL_PROCESSED_DATA_PATH = Path("data/process_data")
 
-IMG_PATTERNS = ("*.jpg", "*.jpeg", "*.png", "*.bmp", "*.gif", "*.tif", "*.tiff")
-
 def _gather_images(folder: Path, patterns: Tuple[str, ...], recursive: bool = True) -> List[Path]:
     files: List[Path] = []
     for pat in patterns:
