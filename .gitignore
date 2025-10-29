@@ -1,5 +1,6 @@
 raw_data/
 data/
+.env
 
 # MAcOS system files
 .DS_Store
@@ -11,3 +12,6 @@ __pycache__/
 *.egg-info/
 *.egg
 *.eggs/
+
+# Jupyter notebooks
+notebooks/eda_modelling_structure.ipynb
