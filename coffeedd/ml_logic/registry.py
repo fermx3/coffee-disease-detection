@@ -4,13 +4,18 @@ This module will be responsible for:
 - loading the trained model
 - preprocessing incoming images
 - running predictions
-
-Step 1: for now we only implement model loading.
 """
 import os
 import tensorflow as tf
+import numpy as np
+import io
+from PIL import Image
+from tensorflow.keras.preprocessing import image
 from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from tensorflow.keras import layers, Sequential
+
+# class names
+CLASS_NAMES = ['healthy', 'cerscospora', 'leaf_rust', 'miner', 'phoma']
 
 
 # ---- paths (adjust names if needed) ----
@@ -44,25 +49,13 @@ def build_model() -> tf.keras.Model:
 
 def load_model() -> tf.keras.Model:
     """
-    Try to load the full model from .keras (new format).
-    If that fails (serialization mismatch), rebuild and load weights from .h5.
+    rebuild the architecture and load weights from .h5.
     """
-    global model
+    global model # the change i apply here will be reflected globally
     if model is not None:
         return model  # return cached model
     
-    # 1) Try full model (.keras) first
-    try:
-        if os.path.exists(FULL_KERAS_PATH):
-            print(f"[registry] Trying to load FULL model from {FULL_KERAS_PATH} ...")
-            model = tf.keras.models.load_model(FULL_KERAS_PATH, compile=False)
-            print("[registry] Full model loaded.")
-            return model
-    except Exception as e:
-        print(f"[registry] Loading FULL model failed: {e}\n"
-              f"[registry] Falling back to architecture+weights...")
-    
-    # 2) Fallback: rebuild architecture and load weights
+    # rebuild architecture and load weights
     print("[registry] Rebuilding architecture and loading weights...")
     model = build_model()
     
@@ -84,11 +77,31 @@ def load_model() -> tf.keras.Model:
     return model
 
 
-def preprocess_image(image_bytes: bytes):
+def preprocess_image(img_source) -> tf.Tensor:
     """
-    Placeholder. We'll implement this in the next step.
-    For now it just raises to remind us it's not done.
+    Convert an image (path or bytes) into a tensor suitable for model prediction.
+    - Accepts file path (str) or bytes
+    - Resizes to (224,224)
+    - Converts to array, expands batch dim, and applies VGG16 preprocessing
     """
-    raise NotImplementedError("preprocess_image() not implemented yet")
+    # Load from bytes or path
+    if isinstance(img_source, (bytes, bytearray)):
+        img = Image.open(io.BytesIO(img_source)).convert("RGB")
+    else:
+        img = image.load_img(img_source, target_size=(224, 224))
 
-def predict
+    # Ensure correct size
+    img = img.resize((224, 224))
+    
+    # Convert the image to a NumPy array
+    img = image.img_to_array(img)
+
+    # Add a dimension for the batch size (VGG16 expects a batch of images)
+    img = np.expand_dims(img, axis=0)
+
+    # Apply VGG16-specific preprocessing (BGR conversion and mean subtraction)
+    img = preprocess_input(img)
+    
+    return img
+
+# seguir con funcion prediction
