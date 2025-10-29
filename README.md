@@ -26,4 +26,7 @@ Notas:
 
 ## Funciones
 
-- make run_split_dataset  ← divide las imágenes de la carpeta raw_data en train/val/test de acuerdo a las carpetas que existen dentro de raw_data.
+- make run_split_dataset  ← divide las imágenes de la carpeta data/raw_data en train/val/test de acuerdo a las carpetas que existen dentro de data/raw_data.
+- make run_split_resized_dataset ← divide las imágenes redimensionadas de la carpeta data/raw_data_224 en train/val/test de acuerdo a las carpetas que existen dentro de data/raw_data_224 para mantener las labels.
+- make map_paths_and_labels ← Genera una lista de las rutas de las imágenes, etiquetas numéricas y nombres de clases desde un directorio estructurado por clases; al final imprime las clases detectadas y el total de imágenes.
+- preprocess_raw_letterbox_224 ← Preprocesa imágenes desde un árbol de carpetas de clases a archivos de tamaño fijo (letterbox/recorte central/redimensionado), guardándolos en una carpeta de destino, preservando la estructura por clases, ejecutándose en paralelo y devolviendo un resumen.
