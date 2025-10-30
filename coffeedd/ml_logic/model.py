@@ -10,6 +10,7 @@ import seaborn as sns
 from coffeedd.params import *
 from coffeedd.ml_logic.custom_metrics import DiseaseRecallMetric
 from coffeedd.ml_logic.data_analysis import false_negatives_analysis
+from coffeedd.utilities.results import combine_histories
 
 # Timing the TF import
 print(Fore.BLUE + "\nLoading TensorFlow..." + Style.RESET_ALL)
@@ -159,6 +160,7 @@ def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     print("✅ Modelo compilado")
     print("\n📋 Resumen del modelo:")
     model.summary()
+    return model
 
 def train_model(
         model: Model,
@@ -183,7 +185,7 @@ def train_model(
     Returns:
         Tuple[Model, dict]: Modelo entrenado y el historial de entrenamiento.
     """
-    checkpoint_filename = f'{MODELS_PATH}/best_model_{"EfficientNetB0" if use_efficientnet else "CNN"}_{len(val_labels)}.keras'
+    checkpoint_filename = f'{LOCAL_REGISTRY_PATH}/checkpoints/best_model_{"EfficientNetB0" if use_efficientnet else "CNN"}_{SAMPLE_NAME}.keras'
 
     class RecallFocusedCallback(keras.callbacks.Callback):
         """Callback personalizado para monitorear y reportar el recall de enfermedades cada 3 epochs."""
@@ -306,6 +308,7 @@ def train_model(
             class_weights,
             callbacks
         )
+        combined_history = combine_histories(history_phase1, history_phase2)
     else:
         if not use_efficientnet:
             print("\n" + "="*60)
@@ -319,9 +322,9 @@ def train_model(
             print("ℹ️  El modelo se mantiene con la base congelada (solo la cabeza entrenada).")
 
         # Crear un history_phase2 vacío para evitar errores
-        history_phase2 = history_phase1
+        combined_history = history_phase1
 
-    return model, history_phase1, history_phase2
+    return model, combined_history
 
 def fine_tune_model(
         model: Model,

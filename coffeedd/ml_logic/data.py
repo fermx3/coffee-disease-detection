@@ -67,10 +67,10 @@ def create_dataset_from_directory(
         # Determinar número de imágenes a usar
         if sample_size == 'half':
             target_size = total_images // 2
-        elif isinstance(sample_size, float):
-            target_size = int(total_images * sample_size)
+        elif float(sample_size) < 1.0:  # Es un float (porcentaje)
+            target_size = int(total_images * float(sample_size))
         else:  # Es un número entero
-            target_size = min(sample_size, total_images)
+            target_size = min(int(sample_size), int(total_images))
 
         # Muestreo estratificado (mantiene proporción de clases)
         from sklearn.model_selection import train_test_split

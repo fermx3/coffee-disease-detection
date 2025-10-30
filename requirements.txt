@@ -5,6 +5,8 @@ ipykernel
 jupyter
 Pillow
 colorama
+mlflow==2.1.1
+protobuf==3.19.6
 
 # Install the version of Tensorflow depending on your processor: darwin == Mac, ARM == M1
 tensorflow-macos==2.10.0; sys_platform == 'darwin' and 'ARM' in platform_version # Mac M-chips
