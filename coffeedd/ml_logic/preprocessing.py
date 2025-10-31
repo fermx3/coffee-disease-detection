@@ -2,18 +2,6 @@ import tensorflow as tf
 from pathlib import Path
 from coffeedd.utilities.map_paths_and_labels import map_paths_and_labels
 
-IMAGENET_MEAN = tf.constant([0.485, 0.456, 0.406], tf.float32)
-IMAGENET_STD = tf.constant([0.229, 0.224, 0.225], tf.float32)
-
-splits_dir = Path("data/processed_data")
-
-X_train, y_train, classes = map_paths_and_labels(splits_dir / "train", recursive=True)
-X_val, y_val, _ = map_paths_and_labels(splits_dir / "val", recursive=True)
-X_test, y_test, _ = map_paths_and_labels(splits_dir / "test", recursive=True)
-
-print(f"Clases: {classes}")
-print(len(X_train), len(X_val), len(X_test))
-
 
 def decode_image(path):
     img_bytes = tf.io.read_file(path)
@@ -79,6 +67,8 @@ def _random_resized_crop(img, target, seed):
 
 
 def normalize_imagenet(img):
+    IMAGENET_MEAN = tf.constant([0.485, 0.456, 0.406], tf.float32)
+    IMAGENET_STD = tf.constant([0.229, 0.224, 0.225], tf.float32)
     return (img - IMAGENET_MEAN) / IMAGENET_STD
 
 
@@ -134,29 +124,27 @@ def build_tf_dataset(
     ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
     return ds
 
+def parse_image(filename, label):
+    """Lee y decodifica una imagen desde archivo"""
+    image = tf.io.read_file(filename)
+    image = tf.image.decode_jpeg(image, channels=3)
+    image = tf.cast(image, tf.float32) / 255.0  # Normalizar a [0, 1]
+    return image, label
 
-train_ds = build_tf_dataset(
-    X_train, y_train, target=224, batch_size=32, training=True, policy="rrc", seed=42
-)
-val_ds = build_tf_dataset(
-    X_val, y_val, target=224, batch_size=32, training=False, policy="letterbox", seed=42
-)
-test_ds = build_tf_dataset(
-    X_test,
-    y_test,
-    target=224,
-    batch_size=32,
-    training=False,
-    policy="letterbox",
-    seed=42,
-)
+def augment_image(image, label):
+    """
+    Data augmentation MÍNIMA para preservar características de enfermedad
+    """
+    # Solo flip horizontal (las hojas NO crecen al revés)
+    image = tf.image.random_flip_left_right(image)
 
-# Ver un batch
-for imgs, ys in train_ds.take(1):
-    print(imgs.shape, ys.shape)
+    # Ajustes MUY sutiles de iluminación
+    image = tf.image.random_brightness(image, max_delta=0.05)  # Muy sutil
+    image = tf.image.random_contrast(image, lower=0.95, upper=1.05)  # Muy sutil
 
-# ===== Uso =====
-# paths = tf.constant(list_of_image_paths)
-# labels = tf.constant(list_of_int_labels)
-# train_ds = build_tf_dataset(paths_train, y_train, target=224, training=True,  policy="rrc",      seed=123)
-# val_ds   = build_tf_dataset(paths_val,   y_val,   target=224, training=False, policy="letterbox", seed=123)
+    # NO cambiar saturación ni hue - son críticos para detectar enfermedades
+
+    # Asegurar rango [0, 1]
+    image = tf.clip_by_value(image, 0.0, 1.0)
+
+    return image, label

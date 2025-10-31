@@ -20,6 +20,9 @@ run_split_dataset:
 run_split_resized_dataset:
 	python -c 'from coffeedd.ml_logic.split import split_dataset; split_dataset(src_root="data/raw_data_224")'
 
+run_train:
+	python -c 'from coffeedd.interface.main import train; train()'
+
 #################### DEFAULT ACTIONS ###################
 default: pylint pytest
 
@@ -58,3 +61,18 @@ preprocess_raw_letterbox_224:
 
 #Ejecuta todo el flujo
 all: install quality eda
+
+#################  DATA SOURCES ACTIONS  #####################
+
+ML_DIR=~/.coffeedd/mlops
+
+show_sources_all:
+	-ls -laR ${LOCAL_DATA_PATH}
+
+reset_local_files:
+	rm -rf ${ML_DIR}
+	mkdir -p ~/.coffeedd/mlops/training_outputs
+	mkdir ~/.coffeedd/mlops/training_outputs/metrics
+	mkdir -p ~/.coffeedd/mlops/training_outputs/models
+	mkdir -p ~/.coffeedd/mlops/training_outputs/params
+	mkdir -p ~/.coffeedd/mlops/training_outputs/checkpoints

@@ -54,11 +54,22 @@ def load_model() -> tf.keras.Model:
     global model # the change i apply here will be reflected globally
     if model is not None:
         return model  # return cached model
-    
-    # rebuild architecture and load weights
+
+    # 1) Try full model (.keras) first
+    try:
+        if os.path.exists(FULL_KERAS_PATH):
+            print(f"[registry] Trying to load FULL model from {FULL_KERAS_PATH} ...")
+            model = tf.keras.models.load_model(FULL_KERAS_PATH, compile=False)
+            print("[registry] Full model loaded.")
+            return model
+    except Exception as e:
+        print(f"[registry] Loading FULL model failed: {e}\n"
+              f"[registry] Falling back to architecture+weights...")
+
+    # 2) Fallback: rebuild architecture and load weights
     print("[registry] Rebuilding architecture and loading weights...")
     model = build_model()
-    
+
     if os.path.exists(WEIGHTS_H5_PATH):
         try:
             # This will work if the .h5 contains weights compatible with the architecture above.
