@@ -67,6 +67,8 @@ IMG_PATTERNS = (
 CLASS_NAMES = ['healthy', 'cerscospora', 'leaf_rust', 'miner', 'phoma']
 NUM_CLASSES = len(CLASS_NAMES)
 
+SUPPORTED_FORMATS = ("image/jpeg", "image/jpg", "image/png")
+
 ##################  VARIABLES CALCULATIONS  #####################
 # Sample size con conversión automática de tipo
 SAMPLE_SIZE = auto_type(os.environ.get("SAMPLE_SIZE", "1.0"))

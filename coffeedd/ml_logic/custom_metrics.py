@@ -36,3 +36,8 @@ class DiseaseRecallMetric(keras.metrics.Metric):
     def reset_state(self):
         self.total_disease_samples.assign(0.0)
         self.correct_disease_predictions.assign(0.0)
+
+    def get_config(self):
+        """Método necesario para serialización"""
+        config = super().get_config()
+        return config

@@ -23,6 +23,12 @@ run_split_resized_dataset:
 run_train:
 	python -c 'from coffeedd.interface.main import train; train()'
 
+run_pred:
+	python -c 'from coffeedd.interface.main import pred; pred()'
+
+run_api:
+	uvicorn coffeedd.api.fast:app --reload
+
 #################### DEFAULT ACTIONS ###################
 default: pylint pytest
 

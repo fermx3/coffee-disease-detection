@@ -1,11 +1,15 @@
 
 import numpy as np
 from colorama import Fore, Style
+from PIL import Image
+from io import BytesIO
+import base64
 
 from coffeedd.ml_logic.data import create_dataset_from_directory, create_tf_dataset
 from coffeedd.ml_logic.custom_weights import get_class_weights
 from coffeedd.ml_logic.registry_ml import load_model, save_results, save_model, mlflow_transition_model, mlflow_run
 from coffeedd.ml_logic.model import initialize_model, compile_model, train_model
+from coffeedd.ml_logic.preprocessing import preprocess_image
 from coffeedd.params import LOCAL_DATA_PATH, CLASS_NAMES, SAMPLE_SIZE, BATCH_SIZE, FINE_TUNE, SAMPLE_NAME, MODEL_TARGET
 
 @mlflow_run
@@ -77,3 +81,66 @@ def train():
     print(Fore.MAGENTA + "\n🏁 Proceso de entrenamiento finalizado. 🏁" + Style.RESET_ALL)
 
     return {"val_recall":val_recall, "val_disease_recall":val_disease_recall}
+
+def pred(img_source=None) -> dict:
+    """
+    Predicción flexible que acepta:
+    - Ruta de archivo (str): '/path/to/image.jpg'
+    - Bytes (bytes): contenido de imagen
+    - Base64 (str): string base64 codificado
+    """
+    print(Fore.MAGENTA + "\n🔎 Empezando predicción... 🔎" + Style.RESET_ALL)
+
+    model, _ = load_model()
+    assert model is not None, "Modelo no cargado."
+
+    if img_source is None:
+        img_source = input("Ingresa la ruta de la imagen: ").strip()
+
+    # MANEJO ROBUSTO DE DIFERENTES INPUTS
+    try:
+        if isinstance(img_source, bytes):
+            # Caso 1: Bytes directos (desde UploadFile)
+            img = Image.open(BytesIO(img_source))
+
+        elif isinstance(img_source, str):
+            # Caso 2: String - puede ser ruta O base64
+
+            # Detectar si es base64
+            if img_source.startswith('data:image'):
+                # Formato: data:image/jpeg;base64,/9j/4AA...
+                img_source = img_source.split(',')[1]
+
+            # Intentar decodificar base64
+            try:
+                img_data = base64.b64decode(img_source)
+                img = Image.open(BytesIO(img_data))
+            except:
+                # Si falla, es una ruta de archivo
+                img = Image.open(img_source)
+        else:
+            raise ValueError(f"Tipo de input no soportado: {type(img_source)}")
+
+    except Exception as e:
+        raise ValueError(f"Error al cargar imagen: {str(e)}")
+
+    # Preprocesar
+    img = img.resize((224, 224)).convert('RGB')
+    img_array = np.array(img) / 255.0
+    img_array = np.expand_dims(img_array, 0)
+
+    # Predecir
+    predictions = model.predict(img_array)
+    predicted_class = np.argmax(predictions)
+    probability = float(np.max(predictions))
+
+    print(Fore.GREEN + f"\n✅ Predicción: {CLASS_NAMES[predicted_class]} ({probability:.4f})" + Style.RESET_ALL)
+
+    return {
+        "class_name": CLASS_NAMES[predicted_class],
+        "probability": probability,
+        "all_predictions": {
+            CLASS_NAMES[i]: float(predictions[0][i])
+            for i in range(len(CLASS_NAMES))
+        }
+    }

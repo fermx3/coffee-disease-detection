@@ -15,17 +15,13 @@ from coffeedd.params import MODEL_TARGET, LOCAL_REGISTRY_PATH, MLFLOW_MODEL_NAME
 def load_model(stage="Production") -> Tuple[keras.Model, bool]:
     """
     Carga un modelo desde almacenamiento local o MLflow.
-
-    Args:
-        stage: Stage del modelo en MLflow ('Production', 'Staging', etc.)
-
-    Returns:
-        Tuple[Model, bool]: (modelo, useefficientnet) o (None, False) si no existe
     """
+    # Importar la métrica personalizada
+    from coffeedd.ml_logic.custom_metrics import DiseaseRecallMetric
+
     if MODEL_TARGET == "local":
         print(Fore.MAGENTA + "\n📥 Cargando modelo desde almacenamiento local..." + Style.RESET_ALL)
 
-        # Get the latest model version name by the timestamp on disk
         local_model_directory = os.path.join(LOCAL_REGISTRY_PATH, "models")
         local_model_paths = glob.glob(f"{local_model_directory}/*.keras")
 
@@ -37,9 +33,13 @@ def load_model(stage="Production") -> Tuple[keras.Model, bool]:
 
         try:
             print(f"📂 Cargando: {os.path.basename(most_recent_model_path_on_disk)}")
-            model = keras.models.load_model(most_recent_model_path_on_disk)
 
-            # Detectar tipo de modelo por el nombre del archivo
+            # Cargar con custom_objects
+            model = keras.models.load_model(
+                most_recent_model_path_on_disk,
+                custom_objects={'DiseaseRecallMetric': DiseaseRecallMetric}
+            )
+
             useefficientnet = 'EfficientNet' in most_recent_model_path_on_disk
 
             print(Fore.GREEN + "✅ Modelo cargado exitosamente" + Style.RESET_ALL)
