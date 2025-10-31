@@ -115,4 +115,38 @@ def preprocess_image(img_source) -> tf.Tensor:
     
     return img
 
-def predict
+def predict(img_source) -> dict:
+    """
+    Run prediction on an image (path or bytes).
+    Returns:
+    {
+        "label": str,
+        "confidence": float,
+        "probabilities": {class_name: float, ...}
+      }
+    """
+    global model
+    if model is None:
+        model = load_model()
+    
+    # Preprocess the image
+    img_tensor = preprocess_image(img_source)
+    
+    # Run prediction
+    preds = model.predict(img_tensor)[0]
+    
+    # top class
+    top_index = int(np.argmax(preds))
+    top_label = CLASS_NAMES[top_index]
+    top_confidence = round(float(preds[top_index]),3)
+    
+    # Full distribution mapped to class names
+    probabilities = {CLASS_NAMES[i]: round(float(preds[i]),3) for i in range(len(CLASS_NAMES))}
+    
+    return {
+        "label": top_label,
+        "confidence": top_confidence,
+        "probabilities": probabilities
+    }
+
+
