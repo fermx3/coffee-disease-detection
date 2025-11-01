@@ -14,6 +14,8 @@ MLFLOW_MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME")
 GCP_PROJECT = os.environ.get("GCP_PROJECT")
 GCP_REGION = os.environ.get("GCP_REGION")
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
+MODEL_ARCHITECTURE = os.environ.get("MODEL_ARCHITECTURE", "efficientnet")
+PRETRAINED_WEIGHTS = os.environ.get("PRETRAINED_WEIGHTS", "imagenet")
 
 ##################  CONSTANTS  #####################
 LOCAL_DATA_PATH = os.path.join(

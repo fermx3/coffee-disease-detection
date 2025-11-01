@@ -25,26 +25,32 @@ print(f"\n✅ TensorFlow loaded ({round(end - start, 2)}s)")
 
 
 def initialize_model(train_labels: list) -> Model:
-    """Inicializa y devuelve el modelo adecuado según el tamaño del dataset.
+    """Inicializa y devuelve el modelo adecuado según el tamaño del dataset y la arquitectura seleccionada.
     Args:
-        input_shape (tuple): Forma de las imágenes de entrada (altura, anchura, canales).
+        train_labels (list): Lista de etiquetas de entrenamiento.
     Returns:
         Model: Modelo Keras compilado listo para entrenar.
     """
     print(Fore.BLUE + "\n🏗️  Construyendo modelo..." + Style.RESET_ALL)
-    # Decidir qué modelo usar según tamaño del dataset
-    if len(train_labels) < 50: # Dataset muy pequeño (< 50 imágenes) antes 5000
-        print(f"📊 Dataset pequeño detectado ({len(train_labels)} imágenes)")
-        print("🔧 Usando modelo CNN simple (más adecuado para pocos datos)")
+    
+    model_architecture = MODEL_ARCHITECTURE.lower()
+    use_efficientnet = False
+
+    if model_architecture == "cnn":
+        print("🔧 Usando modelo CNN simple")
         model = build_simple_cnn_model()
-        use_efficientnet = False
         model_name = "CNN_simple"
-    else:
-        print(f"📊 Dataset grande detectado ({len(train_labels)} imágenes)")
+    elif model_architecture == "vgg16":
+        print("🔧 Usando VGG16 con transfer learning")
+        model = build_vgg16_model()
+        model_name = "VGG16"
+    elif model_architecture == "efficientnet":
         print("🔧 Usando EfficientNetB0 con transfer learning")
-        model, base_model = build_efficientnet_model()
+        model = build_efficientnet_model()
         use_efficientnet = True
         model_name = "EfficientNetB0"
+    else:
+        raise ValueError(f"Arquitectura de modelo no soportada: {model_architecture}")
 
     print("✅ Modelo inicializado")
     print(f"🏷️  Modelo seleccionado: {model_name}")
@@ -102,6 +108,26 @@ def build_simple_cnn_model():
 
     cnn_model = keras.Model(inputs, outputs)
     return cnn_model
+
+def build_vgg16_model():
+    """
+    Recreate the architecture used during training
+    Returns a Keras model.
+    """
+    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    base_model.trainable = False  # Freeze the base model
+
+    model = Sequential([
+        base_model,
+        layers.Flatten(),
+        layers.Dense(500, activation="relu"),
+        layers.Dropout(0.2),
+        layers.Dense(72, activation="relu"),
+        layers.Dropout(0.2),
+        layers.Dense(5, activation="softmax")  # Assuming 5 classes for coffee diseases
+    ])
+
+    return model
 
 def build_efficientnet_model():
     """Modelo EfficientNet para datasets grandes (>= 5000 imágenes)"""
