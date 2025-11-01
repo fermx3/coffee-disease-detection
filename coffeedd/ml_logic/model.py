@@ -11,6 +11,7 @@ from coffeedd.params import *
 from coffeedd.ml_logic.custom_metrics import DiseaseRecallMetric
 from coffeedd.ml_logic.data_analysis import false_negatives_analysis
 from coffeedd.utilities.results import combine_histories
+from coffeedd.params import MODEL_NAME
 
 # Timing the TF import
 print(Fore.BLUE + "\nLoading TensorFlow..." + Style.RESET_ALL)
@@ -19,6 +20,8 @@ start = time.perf_counter()
 from tensorflow import keras
 from keras import Model, layers
 from keras.applications import EfficientNetB0
+from keras.applications.vgg16 import VGG16
+from keras.models import Sequential
 
 end = time.perf_counter()
 print(f"\n✅ TensorFlow loaded ({round(end - start, 2)}s)")
@@ -32,9 +35,8 @@ def initialize_model(train_labels: list) -> Model:
         Model: Modelo Keras compilado listo para entrenar.
     """
     print(Fore.BLUE + "\n🏗️  Construyendo modelo..." + Style.RESET_ALL)
-    
+
     model_architecture = MODEL_ARCHITECTURE.lower()
-    use_efficientnet = False
 
     if model_architecture == "cnn":
         print("🔧 Usando modelo CNN simple")
@@ -46,8 +48,7 @@ def initialize_model(train_labels: list) -> Model:
         model_name = "VGG16"
     elif model_architecture == "efficientnet":
         print("🔧 Usando EfficientNetB0 con transfer learning")
-        model = build_efficientnet_model()
-        use_efficientnet = True
+        model, _ = build_efficientnet_model()  # Desempaquetar tupla, solo usar modelo
         model_name = "EfficientNetB0"
     else:
         raise ValueError(f"Arquitectura de modelo no soportada: {model_architecture}")
@@ -55,7 +56,7 @@ def initialize_model(train_labels: list) -> Model:
     print("✅ Modelo inicializado")
     print(f"🏷️  Modelo seleccionado: {model_name}")
 
-    return model, use_efficientnet
+    return model
 
 def build_simple_cnn_model():
     """Modelo CNN simple para datasets pequeños (< 5000 imágenes)"""
@@ -195,7 +196,6 @@ def train_model(
         val_dataset,
         val_labels,
         class_weights: dict,
-        use_efficientnet: bool,
         fine_tune: bool = True
 ) -> Tuple[Model, dict]:
     """Entrena el modelo en dos fases:
@@ -206,12 +206,11 @@ def train_model(
         val_dataset: Dataset de validación.
         val_labels: Etiquetas de validación (para métricas personalizadas).
         class_weights (dict): Pesos de clase para manejar el desbalance.
-        use_efficientnet (bool): Indica si se está usando EfficientNet.
         fine_tune (bool): Indica si se debe realizar fine-tuning en fase 2.
     Returns:
         Tuple[Model, dict]: Modelo entrenado y el historial de entrenamiento.
     """
-    checkpoint_filename = f'{LOCAL_REGISTRY_PATH}/checkpoints/best_model_{"EfficientNetB0" if use_efficientnet else "CNN"}_{SAMPLE_NAME}.keras'
+    checkpoint_filename = f'{LOCAL_REGISTRY_PATH}/checkpoints/best_model_{MODEL_ARCHITECTURE}_{SAMPLE_NAME}.keras'
 
     class RecallFocusedCallback(keras.callbacks.Callback):
         """Callback personalizado para monitorear y reportar el recall de enfermedades cada 3 epochs."""
@@ -294,14 +293,14 @@ def train_model(
     ]
 
     print("\n" + "="*60)
-    if use_efficientnet:
-        print("🚂 FASE 1: Entrenando con EfficientNet congelado (15 epochs)")
+    if MODEL_ARCHITECTURE.lower() != "cnn":
+        print(f"🚂 FASE 1: Entrenando con {MODEL_ARCHITECTURE} congelado (15 epochs)")
     else:
         print("🚂 ENTRENAMIENTO: Modelo CNN simple (30 epochs)")
     print("="*60)
 
     # Ajustar epochs según tipo de modelo
-    initial_epochs = 15 if use_efficientnet else 30
+    initial_epochs = 15 if MODEL_ARCHITECTURE == "cnn" else 30
 
     history_phase1 = model.fit(
         train_dataset,
@@ -317,7 +316,7 @@ def train_model(
 
     # Solo hacer fine-tuning si usamos EfficientNet Y tenemos suficientes datos Y la fase 1 fue exitosa
     should_finetune = (
-        use_efficientnet and
+        MODEL_ARCHITECTURE != "cnn" and
         len(train_labels) >= 10000 and
         len(history_phase1.history['val_accuracy']) > 0 and
         max(history_phase1.history['val_accuracy']) > 0.60 and  # Umbral mínimo de accuracy
@@ -336,16 +335,16 @@ def train_model(
         )
         combined_history = combine_histories(history_phase1, history_phase2)
     else:
-        if not use_efficientnet:
-            print("\n" + "="*60)
-            print("ℹ️  Modelo CNN simple: No requiere fine-tuning")
-            print("="*60)
-        else:
+        if MODEL_ARCHITECTURE != "cnn":
             print("\n" + "="*60)
             print(f"⚠️  FASE 2: Saltando fine-tuning (dataset pequeño: {len(train_labels)} imágenes)")
             print("="*60)
             print("ℹ️  Se requieren al menos 10,000 imágenes para fine-tuning seguro.")
             print("ℹ️  El modelo se mantiene con la base congelada (solo la cabeza entrenada).")
+        else:
+            print("\n" + "="*60)
+            print("ℹ️  Modelo CNN simple: No requiere fine-tuning")
+            print("="*60)
 
         # Crear un history_phase2 vacío para evitar errores
         combined_history = history_phase1
@@ -419,7 +418,6 @@ def evaluate_model(
         model: Model,
         test_dataset,
         test_labels,
-        useefficientnet: bool,
         get_confusion_matrix: bool = False,
         get_false_negatives_analysis: bool = True
     ) -> Tuple[Model, dict]:
@@ -429,7 +427,6 @@ def evaluate_model(
         model (Model): Modelo Keras a evaluar.
         test_dataset: Dataset de test.
         test_labels: Etiquetas reales del test set.
-        useefficientnet (bool): Indica si se está usando EfficientNet.
     Returns:
         Tuple[Model, dict]: Resultados de la evaluación.
     """
@@ -438,7 +435,7 @@ def evaluate_model(
         print(Fore.RED + "❌ Modelo no está definido. No se puede evaluar." + Style.RESET_ALL)
         return None
 
-    model_name = "EfficientNetB0" if useefficientnet else "CNN"
+    model_name = MODEL_NAME
 
     print("\n" + "="*60)
     print("🧪 EVALUACIÓN FINAL EN TEST SET")
@@ -491,13 +488,13 @@ def evaluate_model(
         axis_labels = [CLASS_NAMES[i] for i in unique_test_classes]
 
         # Nombre descriptivo para la matriz de confusión
-        confusion_matrix_filename = f'{MODELS_PATH}/confusion_matrix_{model_name}_{SAMPLE_NAME}.png'
+        confusion_matrix_filename = f'{MODELS_PATH}/confusion_matrix_{model_name}.png'
 
         plt.figure(figsize=(12, 10))
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                     xticklabels=axis_labels, yticklabels=axis_labels,
                     cbar_kws={'label': 'Count'})
-        plt.title(f'Matriz de Confusión - Test Set\n{model_name} - {SAMPLE_NAME}',
+        plt.title(f'Matriz de Confusión - Test Set\n{model_name}',
                 fontsize=16, fontweight='bold')
         plt.ylabel('Etiqueta Real', fontsize=12)
         plt.xlabel('Predicción', fontsize=12)

@@ -103,7 +103,7 @@ def health_check():
     """Check if the model is loaded and ready"""
     try:
         from coffeedd.interface.main import load_model
-        model, _ = load_model()
+        model = load_model()
         return {
             "status": "healthy",
             "model_loaded": model is not None

@@ -195,16 +195,8 @@ def test_manual_upload():
         models = list_models_in_gcs(limit=3)
         print(f"   ✅ Encontrados {len(models)} modelos")
 
-        # Preguntar si hacer subida real
-        if input("\n¿Ejecutar subida real? (y/N): ").lower() == 'y':
-            print("\n3. Ejecutando subida real...")
-            result = upload_latest_model_to_gcs(
-                model_version="test_" + str(int(time.time())),
-                dry_run=False
-            )
-            print(f"   ✅ Subida real exitosa: {result['success']}")
-        else:
-            print("\n3. Subida real omitida")
+        # Solo probar dry run en tests automatizados
+        print("\n3. Test manual completado (solo dry run en pytest)")
 
         print("\n✅ Test manual completado")
 

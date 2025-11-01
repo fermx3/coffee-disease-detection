@@ -120,3 +120,16 @@ def get_sample_name(sample_size):
 
     # Si es int o cualquier otro tipo, convertir a string
     return str(sample_size)
+
+def get_model_name(base_name, sample_name, epochs):
+    """
+    Genera un nombre de modelo basado en el nombre base, tamaño de muestra y epochs.
+
+    Args:
+        base_name (str): Nombre base del modelo
+        sample_name (str): Nombre descriptivo del tamaño de muestra
+        epochs (int): Número de epochs
+    Returns:
+        str: Nombre completo del modelo
+    """
+    return f"{base_name}_samples-{sample_name}_epochs-{epochs}"

@@ -12,8 +12,7 @@ import json
 from coffeedd.params import (
     GCP_PROJECT,
     BUCKET_NAME,
-    MODEL_NAME,
-    MODELS_PATH,
+    MODEL_ARCHITECTURE,
     LOCAL_REGISTRY_PATH
 )
 
@@ -62,8 +61,21 @@ def upload_latest_model_to_gcs(
     model_type = metadata.get("model_type", "CNN") if metadata else "CNN"
     model_filename = f"model_{model_type}_{model_version}.keras"
     
-    # 6. Definir rutas en GCS
-    gcs_paths = _generate_gcs_paths(model_version, model_filename)
+    # Detectar arquitectura para la estructura de carpetas
+    architecture = None
+    if metadata and 'architecture' in metadata:
+        architecture = metadata['architecture']
+    elif metadata and 'model_type' in metadata:
+        # Compatibilidad con metadatos antiguos
+        if metadata['model_type'] == 'EfficientNet':
+            architecture = 'efficientnet'
+        elif metadata['model_type'] == 'VGG16':
+            architecture = 'vgg16'
+        else:
+            architecture = 'cnn'
+    
+    # 6. Definir rutas en GCS con arquitectura específica
+    gcs_paths = _generate_gcs_paths(model_version, model_filename, architecture)
 
     # 7. Mostrar resumen antes de subir
     model_size = _get_file_size(latest_model_path)
@@ -166,16 +178,24 @@ def _verify_gcs_config() -> bool:
 
 
 def _find_latest_model() -> Path:
-    """Encuentra el archivo de modelo más reciente"""
-    models_dir = Path(LOCAL_REGISTRY_PATH, "models")
+    """Encuentra el archivo de modelo más reciente, buscando en carpetas de arquitectura"""
+    models_base_dir = Path(LOCAL_REGISTRY_PATH, "models")
 
-    if not models_dir.exists():
+    if not models_base_dir.exists():
         return None
 
-    # Buscar archivos de modelo (.h5, .keras)
     model_files = []
-    for pattern in ['*.h5', '*.keras']:
-        model_files.extend(list(models_dir.glob(pattern)))
+    
+    # Buscar en directorio base (compatibilidad con modelos antiguos)
+    for pattern in ['*.h5', '*.keras', '*.weights.h5']:
+        model_files.extend(list(models_base_dir.glob(pattern)))
+    
+    # Buscar en subcarpetas de arquitectura
+    for arch_folder in ['cnn', 'vgg16', 'efficientnet']:
+        arch_dir = models_base_dir / arch_folder
+        if arch_dir.exists():
+            for pattern in ['*.h5', '*.keras', '*.weights.h5']:
+                model_files.extend(list(arch_dir.glob(pattern)))
 
     if not model_files:
         return None
@@ -187,10 +207,10 @@ def _find_latest_model() -> Path:
 
 def _collect_model_metadata(model_path: Path) -> dict:
     """Recolecta metadatos del modelo y entrenamiento"""
-    
+
     # Detectar tipo de modelo desde el archivo
     model_type = "CNN"  # por defecto
-    
+
     # Intentar cargar el modelo para detectar su tipo
     try:
         import keras
@@ -203,7 +223,7 @@ def _collect_model_metadata(model_path: Path) -> dict:
             # Para archivos .h5, inferir del nombre si es posible
             if 'efficientnet' in model_path.name.lower():
                 model_type = "EfficientNet"
-        
+
         # Buscar archivos de configuración que puedan tener la info
         config_files = list(model_path.parent.glob("*config.json"))
         for config_file in config_files:
@@ -216,16 +236,16 @@ def _collect_model_metadata(model_path: Path) -> dict:
                         break
             except:
                 continue
-                
+
     except Exception as e:
         print(f"⚠️  No se pudo detectar tipo de modelo, usando CNN por defecto: {e}")
-    
+
     metadata = {
         "model_filename": model_path.name,
         "model_size_bytes": model_path.stat().st_size,
         "created_at": datetime.fromtimestamp(model_path.stat().st_mtime).isoformat(),
         "upload_timestamp": datetime.now().isoformat(),
-        "model_name": MODEL_NAME,
+        "model_name": MODEL_ARCHITECTURE,
         "model_type": model_type,
     }
 
@@ -255,9 +275,12 @@ def _collect_model_metadata(model_path: Path) -> dict:
     return metadata
 
 
-def _generate_gcs_paths(model_version: str, model_filename: str) -> dict:
+def _generate_gcs_paths(model_version: str, model_filename: str, architecture: str = None) -> dict:
     """Genera las rutas en GCS para modelo y metadatos"""
-    base_path = f"models/{MODEL_NAME}"
+    # Usar arquitectura específica del modelo, o la configurada por defecto
+    arch_for_path = architecture or MODEL_ARCHITECTURE.lower()
+    
+    base_path = f"models/{arch_for_path}"
 
     return {
         "model": f"{base_path}/v{model_version}/{model_filename}",
@@ -332,7 +355,7 @@ def list_models_in_gcs(limit: int = 10) -> list:
     client = storage.Client(project=GCP_PROJECT)
     bucket = client.bucket(BUCKET_NAME)
 
-    prefix = f"models/{MODEL_NAME}/"
+    prefix = f"models/{MODEL_ARCHITECTURE}/"
     blobs = list(bucket.list_blobs(prefix=prefix))
 
     models = []

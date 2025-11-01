@@ -15,7 +15,7 @@ from coffeedd.ml_logic.registry_ml import load_model, save_results, save_model, 
 from coffeedd.ml_logic.model import initialize_model, compile_model, train_model
 from coffeedd.ml_logic.data_analysis import plot_training_metrics_combined, analyze_training_convergence_combined, analyze_false_negatives, analyze_disease_recall
 from coffeedd.ml_logic.gcs_upload import upload_latest_model_to_gcs, list_models_in_gcs
-from coffeedd.params import LOCAL_DATA_PATH, CLASS_NAMES, SAMPLE_SIZE, BATCH_SIZE, FINE_TUNE, SAMPLE_NAME, MODEL_TARGET, MODELS_PATH, NUM_CLASSES
+from coffeedd.params import LOCAL_DATA_PATH, CLASS_NAMES, SAMPLE_SIZE, BATCH_SIZE, FINE_TUNE, SAMPLE_NAME, MODEL_TARGET, MODELS_PATH, NUM_CLASSES, MODEL_NAME
 
 @mlflow_run
 def train(metrics_viz=True, test_mode=False):
@@ -41,10 +41,17 @@ def train(metrics_viz=True, test_mode=False):
 
     #Entrenar el modelo usando `model.py`
         # Cargar o inicializar modelo
-    model, useefficientnet = load_model()
-
-    if model is None:
-        model, useefficientnet = initialize_model(train_labels)
+    try:
+        model = load_model()
+        if model is not None:
+            print(Fore.GREEN + "✅ Modelo existente cargado exitosamente" + Style.RESET_ALL)
+        else:
+            print(Fore.YELLOW + "⚠️  No hay modelo existente, creando uno nuevo..." + Style.RESET_ALL)
+            model = initialize_model(train_labels)
+    except Exception as e:
+        print(Fore.YELLOW + f"⚠️  Error al cargar modelo existente: {str(e)[:100]}" + Style.RESET_ALL)
+        print(Fore.BLUE + "🔄 Creando modelo nuevo..." + Style.RESET_ALL)
+        model = initialize_model(train_labels)
 
     model = compile_model(model)
 
@@ -55,7 +62,6 @@ def train(metrics_viz=True, test_mode=False):
         val_dataset,
         val_labels,
         class_weights=class_weights,
-        use_efficientnet=useefficientnet,
         fine_tune=FINE_TUNE
     )
 
@@ -75,8 +81,7 @@ def train(metrics_viz=True, test_mode=False):
         if history is not None:
             print(f"\n{Fore.MAGENTA}📊 Generando visualizaciones de entrenamiento...{Style.RESET_ALL}")
 
-            model_name = "efficientnet" if useefficientnet else "simple_CNN",
-            model_name = model_name[0]
+            model_name = MODEL_NAME
 
             # Generar visualizaciones de métricas de entrenamiento
             training_viz_metrics = plot_training_metrics_combined(
@@ -100,7 +105,7 @@ def train(metrics_viz=True, test_mode=False):
             files_generated = []
 
             if training_viz_metrics:
-                training_metrics_file = f'{MODELS_PATH}/training_metrics_{model_name}_{SAMPLE_NAME}.png'
+                training_metrics_file = f'{MODELS_PATH}/training_metrics_{model_name}.png'
                 files_generated.append(training_metrics_file)
 
             print(f"   • Archivos generados: {len(files_generated)}")
@@ -116,14 +121,18 @@ def train(metrics_viz=True, test_mode=False):
         context="train" if not test_mode else "test_train",
         training_set_size=SAMPLE_NAME,
         img_count=len(train_labels),
-        useefficientnet=useefficientnet,
+        model_name=model_name,
         fine_tune=FINE_TUNE
     )
 
     # Guardar resultados y modelo entrenado si no es modo test
     if not test_mode:
+        # Combinar métricas manejando duplicados (convergence_metrics tiene prioridad)
+        combined_metrics = training_viz_metrics.copy()
+        combined_metrics.update(convergence_metrics)
+
         # Save results on the hard drive using coffeedd.ml_logic.registry
-        save_results(params=params, metrics=dict(val_recall=val_recall, val_disease_recall=val_disease_recall, **training_viz_metrics, **convergence_metrics))
+        save_results(params=params, metrics=combined_metrics)
 
         # Save model weight on the hard drive (and optionally on GCS too!)
         save_model(model=model)
@@ -147,7 +156,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     print(Fore.MAGENTA + "\n🧪 Empezando evaluación del modelo... 🧪" + Style.RESET_ALL)
 
     # Cargar el modelo entrenado
-    model, useefficientnet = load_model()
+    model = load_model()
     assert model is not None, "Modelo no encontrado. Entrena el modelo primero."
 
     print(f"🚀 Cargando datos de test... con {SAMPLE_NAME}")
@@ -163,7 +172,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     print("\n✅ Dataset de test creado exitosamente")
 
     # Constantes
-    model_name = "efficientnet" if useefficientnet else "custom_model"
+    model_name = MODEL_NAME
     sample_name = SAMPLE_NAME
 
     print("\n" + "="*60)
@@ -287,7 +296,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
         context="evaluate",
         training_set_size=SAMPLE_NAME,
         test_img_count=len(test_labels),
-        useefficientnet=useefficientnet,
+        model_name=model_name,
         classes_in_test=len(unique_test_classes),
         total_classes=NUM_CLASSES,
     )
@@ -367,8 +376,16 @@ def pred(img_source=None) -> dict:
     """
     print(Fore.MAGENTA + "\n🔎 Empezando predicción... 🔎" + Style.RESET_ALL)
 
-    model, _ = load_model()
-    assert model is not None, "Modelo no cargado."
+    # Intentar cargar modelo existente
+    model = load_model()
+
+    if model is None:
+        print(Fore.YELLOW + "⚠️  No se pudo cargar modelo existente" + Style.RESET_ALL)
+        print(Fore.BLUE + "🔄 Para hacer predicciones, necesitas entrenar un modelo primero" + Style.RESET_ALL)
+        print(Fore.CYAN + "💡 Ejecuta: make run_train" + Style.RESET_ALL)
+        raise ValueError("No hay modelo disponible para predicción. Entrena un modelo primero con 'make run_train'")
+
+    print(Fore.GREEN + "✅ Modelo cargado exitosamente" + Style.RESET_ALL)
 
     if img_source is None:
         img_source = input("Ingresa la ruta de la imagen: ").strip()

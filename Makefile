@@ -96,6 +96,7 @@ ML_DIR=~/.coffeedd/mlops
 
 show_sources_all:
 	-ls -laR ${LOCAL_DATA_PATH}
+	-gsutil ls gs://${BUCKET_NAME}
 
 reset_local_files:
 	rm -rf ${ML_DIR}
@@ -104,3 +105,9 @@ reset_local_files:
 	mkdir -p ~/.coffeedd/mlops/training_outputs/models
 	mkdir -p ~/.coffeedd/mlops/training_outputs/params
 	mkdir -p ~/.coffeedd/mlops/training_outputs/checkpoints
+
+reset_gcs_files:
+	-gsutil rm -r gs://${BUCKET_NAME}
+	-gsutil mb -p ${GCP_PROJECT} -l ${GCP_REGION} gs://${BUCKET_NAME}
+
+reset_all_files: reset_local_files reset_gcs_files

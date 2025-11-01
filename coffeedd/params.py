@@ -1,5 +1,5 @@
 import os
-from coffeedd.utilities.params_helpers import auto_type, get_epochs_for_sample_size, get_sample_name
+from coffeedd.utilities.params_helpers import auto_type, get_epochs_for_sample_size, get_sample_name, get_model_name
 
 ##################  VARIABLES  ##################
 SAMPLE_SIZE = os.environ.get("SAMPLE_SIZE")
@@ -83,3 +83,6 @@ EPOCHS = get_epochs_for_sample_size(SAMPLE_SIZE)
 
 # Nombre descriptivo para archivos
 SAMPLE_NAME = get_sample_name(SAMPLE_SIZE)
+
+# Nombre del modelo
+MODEL_NAME = get_model_name(MODEL_ARCHITECTURE, SAMPLE_NAME, EPOCHS)
