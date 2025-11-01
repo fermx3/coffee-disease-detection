@@ -11,6 +11,9 @@ MODEL_TARGET = os.environ.get("MODEL_TARGET", "local")
 MLFLOW_TRACKING_URI = os.environ.get("MLFLOW_TRACKING_URI")
 MLFLOW_EXPERIMENT = os.environ.get("MLFLOW_EXPERIMENT")
 MLFLOW_MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME")
+GCP_PROJECT = os.environ.get("GCP_PROJECT")
+GCP_REGION = os.environ.get("GCP_REGION")
+BUCKET_NAME = os.environ.get("BUCKET_NAME")
 
 ##################  CONSTANTS  #####################
 LOCAL_DATA_PATH = os.path.join(
@@ -19,7 +22,7 @@ LOCAL_DATA_PATH = os.path.join(
     "fermx3",
     "coffee-disease-detection",
     "data",
-    "processed_data",
+    "processed_data_full",
 )
 
 LOCAL_RAW_DATA_PATH = os.path.join(
@@ -66,6 +69,8 @@ IMG_PATTERNS = (
 
 CLASS_NAMES = ['healthy', 'cerscospora', 'leaf_rust', 'miner', 'phoma']
 NUM_CLASSES = len(CLASS_NAMES)
+
+SUPPORTED_FORMATS = ("image/jpeg", "image/jpg", "image/png")
 
 ##################  VARIABLES CALCULATIONS  #####################
 # Sample size con conversión automática de tipo

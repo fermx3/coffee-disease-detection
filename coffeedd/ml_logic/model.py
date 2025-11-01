@@ -33,7 +33,7 @@ def initialize_model(train_labels: list) -> Model:
     """
     print(Fore.BLUE + "\n🏗️  Construyendo modelo..." + Style.RESET_ALL)
     # Decidir qué modelo usar según tamaño del dataset
-    if len(train_labels) < 5000:
+    if len(train_labels) < 50: # Dataset muy pequeño (< 50 imágenes) antes 5000
         print(f"📊 Dataset pequeño detectado ({len(train_labels)} imágenes)")
         print("🔧 Usando modelo CNN simple (más adecuado para pocos datos)")
         model = build_simple_cnn_model()

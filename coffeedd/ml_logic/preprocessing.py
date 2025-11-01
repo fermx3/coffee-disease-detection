@@ -1,6 +1,9 @@
 import tensorflow as tf
+from PIL import Image
+import numpy as np
+import io
 from pathlib import Path
-from coffeedd.utilities.map_paths_and_labels import map_paths_and_labels
+from keras.utils import load_img, img_to_array
 
 
 def decode_image(path):
@@ -148,3 +151,27 @@ def augment_image(image, label):
     image = tf.clip_by_value(image, 0.0, 1.0)
 
     return image, label
+
+def preprocess_image(img_source) -> tf.Tensor:
+    """
+    Convert an image (path or bytes) into a tensor suitable for model prediction.
+    - Accepts file path (str) or bytes
+    - Resizes to (224,224)
+    - Converts to array, expands batch dim, and applies VGG16 preprocessing
+    """
+    # Load from bytes or path
+    if isinstance(img_source, (bytes, bytearray)):
+        img = Image.open(io.BytesIO(img_source)).convert("RGB")
+    else:
+        img = load_img(img_source, target_size=(224, 224))
+
+    # Ensure correct size
+    img = img.resize((224, 224))
+
+    # Convert the image to a NumPy array
+    img = img_to_array(img)
+
+    # Add a dimension for the batch size (VGG16 expects a batch of images)
+    img = np.expand_dims(img, axis=0)
+
+    return img

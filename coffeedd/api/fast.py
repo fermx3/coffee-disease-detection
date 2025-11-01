@@ -20,9 +20,13 @@ ctrl + c
 """
 
 
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from coffeedd.ml_logic.registry import predict, load_model
+from coffeedd.interface.main import pred
+from coffeedd.params import SUPPORTED_FORMATS
+
+import base64
 
 app = FastAPI(
     title="Coffee Disease Detection API",
@@ -49,20 +53,65 @@ def root():
     }
 
 @app.post("/predict")
-async def create_prediction(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(..., description="Image file (JPG, PNG, WEBP)")
+):
     """
-    Make a prediction on an uploaded image
+    Make a prediction on an uploaded image.
+
+    Supports multiple input formats:
+    - Direct file upload
+    - Works with any model that accepts image bytes or base64
     """
-    # basic validation
-    if file.content_type not in {"image/jpeg", "image/jpg", "image/png"}:
-        raise HTTPException(status_code=400, detail="Invalid image format. Only JPG and PNG are supported.")
-    
-    # read bytes
-    image_bytes = await file.read()
-    
-    # Get prediction using the model
+
+    # 1. Validar formato
+    if file.content_type not in SUPPORTED_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid format. Supported: {', '.join(SUPPORTED_FORMATS)}"
+        )
+
+    # 2. Leer imagen
     try:
-        result = predict(image_bytes)  # calls your registry.predict(...)
+        image_bytes = await file.read()
+
+        # Validar que no esté vacío
+        if len(image_bytes) == 0:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
-    return result
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
+
+    # 3. Hacer predicción (maneja ambos formatos)
+    try:
+        # La función pred() debe aceptar bytes O base64
+        # Opción 1: Enviar bytes directamente
+        result = pred(img_source=image_bytes)
+
+        # Opción 2: Si tu modelo necesita base64, convertir aquí
+        # img_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        # result = pred(img_source=img_base64)
+
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Prediction failed: {str(e)}"
+        )
+
+@app.get("/health")
+def health_check():
+    """Check if the model is loaded and ready"""
+    try:
+        from coffeedd.interface.main import load_model
+        model, _ = load_model()
+        return {
+            "status": "healthy",
+            "model_loaded": model is not None
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }

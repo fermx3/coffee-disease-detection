@@ -23,6 +23,15 @@ run_split_resized_dataset:
 run_train:
 	python -c 'from coffeedd.interface.main import train; train()'
 
+run_pred:
+	python -c 'from coffeedd.interface.main import pred; pred()'
+
+run_evaluate:
+	python -c 'from coffeedd.interface.main import evaluate; evaluate()'
+
+run_api:
+	uvicorn coffeedd.api.fast:app --reload
+
 #################### DEFAULT ACTIONS ###################
 default: pylint pytest
 
@@ -44,6 +53,12 @@ pylint:
 
 pytest:
 	PYTHONDONTWRITEBYTECODE=1 pytest -v --color=yes
+
+test_gcp_setup:
+	@pytest \
+	tests/test_gcp_setup.py::TestGcpSetup::test_setup_key_env \
+	tests/test_gcp_setup.py::TestGcpSetup::test_setup_key_path \
+	tests/test_gcp_setup.py::TestGcpSetup::test_code_get_project
 
 #################  UTILITIES  #####################
 organize_RoCoLe_images: #Debe existir el archivo data/RoCoLe/Annotations/RoCoLe-classes.xlsx y la carpeta data/RoCoLe/Photos
