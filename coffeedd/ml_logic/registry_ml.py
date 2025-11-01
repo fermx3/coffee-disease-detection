@@ -252,26 +252,333 @@ def load_model(stage="Production", compile_with_metrics=True) -> Tuple[keras.Mod
         return load_from_local()
 
     elif MODEL_TARGET == "gcs":
-        # 🎁 We give you this piece of code as a gift. Please read it carefully! Add a breakpoint if needed!
-        print(Fore.BLUE + "\nLoad latest model from GCS..." + Style.RESET_ALL)
-
-        client = storage.Client()
-        blobs = list(client.get_bucket(BUCKET_NAME).list_blobs(prefix="model"))
+        print(Fore.BLUE + "\n☁️  Cargando modelo desde Google Cloud Storage..." + Style.RESET_ALL)
 
         try:
-            latest_blob = max(blobs, key=lambda x: x.updated)
-            latest_model_path_to_save = os.path.join(LOCAL_REGISTRY_PATH, latest_blob.name)
+            client = storage.Client()
+            bucket = client.get_bucket(BUCKET_NAME)
+
+            # Buscar archivos de modelo con diferentes extensiones
+            model_prefixes = ["models/", "model"]  # Buscar en ambos prefijos
+            all_blobs = []
+
+            for prefix in model_prefixes:
+                blobs = list(bucket.list_blobs(prefix=prefix))
+                model_blobs = [
+                    blob for blob in blobs
+                    if blob.name.endswith(('.keras', '.h5', '.weights.h5')) and
+                    not blob.name.endswith('_config.json')
+                ]
+                all_blobs.extend(model_blobs)
+
+            if not all_blobs:
+                print(f"{Fore.RED}❌ No se encontraron modelos en GCS bucket {BUCKET_NAME}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}🔄 Intentando fallback a almacenamiento local...{Style.RESET_ALL}")
+                return load_from_local()
+
+            # Encontrar el blob más reciente
+            latest_blob = max(all_blobs, key=lambda x: x.updated)
+            print(f"📦 Modelo más reciente encontrado: {latest_blob.name}")
+            print(f"📅 Última actualización: {latest_blob.updated}")
+            print(f"📏 Tamaño: {latest_blob.size / (1024*1024):.2f} MB")
+
+            # Crear directorio local si no existe
+            local_model_directory = os.path.join(LOCAL_REGISTRY_PATH, "models")
+            os.makedirs(local_model_directory, exist_ok=True)
+
+            # Descargar archivo principal
+            model_filename = os.path.basename(latest_blob.name)
+            latest_model_path_to_save = os.path.join(local_model_directory, model_filename)
+
+            print(f"📥 Descargando a: {latest_model_path_to_save}")
             latest_blob.download_to_filename(latest_model_path_to_save)
 
-            latest_model = keras.models.load_model(latest_model_path_to_save)
+            # Si es archivo de pesos, buscar también el archivo de configuración
+            config_path = None
+            if latest_blob.name.endswith('.weights.h5'):
+                config_blob_name = latest_blob.name.replace('.weights.h5', '_config.json')
 
-            print("✅ Latest model downloaded from cloud storage")
+                try:
+                    config_blob = bucket.blob(config_blob_name)
+                    if config_blob.exists():
+                        config_filename = os.path.basename(config_blob_name)
+                        config_path = os.path.join(local_model_directory, config_filename)
+                        config_blob.download_to_filename(config_path)
+                        print(f"📥 Configuración descargada: {config_path}")
+                    else:
+                        print(f"{Fore.YELLOW}⚠️  Archivo de configuración no encontrado: {config_blob_name}{Style.RESET_ALL}")
+                except Exception as e:
+                    print(f"{Fore.YELLOW}⚠️  Error descargando configuración: {e}{Style.RESET_ALL}")
 
-            return latest_model
-        except:
-            print(f"\n❌ No model found in GCS bucket {BUCKET_NAME}")
+            # Ahora cargar el modelo usando la misma lógica que load_from_local
+            try:
+                print(f"🔄 Cargando modelo descargado...")
 
-            return None, False
+                # Si es archivo de pesos (.weights.h5), reconstruir el modelo
+                if latest_model_path_to_save.endswith('.weights.h5'):
+                    print(Fore.BLUE + "🔧 Detectado archivo de pesos, reconstruyendo modelo..." + Style.RESET_ALL)
+
+                    # Leer la configuración
+                    model_info = {}
+                    if config_path and os.path.exists(config_path):
+                        import json
+                        with open(config_path, 'r') as f:
+                            model_info = json.load(f)
+                        print(f"📄 Configuración cargada: {model_info}")
+                        useefficientnet = model_info.get('model_type') == 'EfficientNet'
+                    else:
+                        # Detectar por nombre del archivo
+                        useefficientnet = 'EfficientNet' in model_filename or 'efficientnet' in model_filename.lower()
+                        print(f"{Fore.YELLOW}⚠️  No hay configuración, detectando por nombre: {'EfficientNet' if useefficientnet else 'CNN'}{Style.RESET_ALL}")
+
+                    # Lista de estrategias de reconstrucción para probar
+                    reconstruction_strategies = []
+
+                    if useefficientnet:
+                        print("🏗️  Reconstruyendo EfficientNetB0...")
+                        # Estrategias para EfficientNet (en orden de probabilidad)
+                        reconstruction_strategies = [
+                            ("sin fine-tuning", "standard"),
+                            ("con fine-tuning", "finetuning"),
+                        ]
+                    else:
+                        print("🏗️  Reconstruyendo CNN simple...")
+                        # Estrategias para CNN simple
+                        reconstruction_strategies = [
+                            ("CNN estándar", "standard"),
+                        ]
+
+                    # Probar cada estrategia hasta encontrar una compatible
+                    model_loaded = False
+                    for strategy_name, strategy_type in reconstruction_strategies:
+                        try:
+                            print(f"🔍 Intentando estrategia: {strategy_name}...")
+
+                            if useefficientnet:
+                                if strategy_type == "finetuning":
+                                    # Estrategia con fine-tuning
+                                    model, base_model = build_efficientnet_model()
+
+                                    # Aplicar configuración de fine-tuning
+                                    base_model.trainable = True
+                                    fine_tune_at = len(base_model.layers) - 15
+                                    for layer in base_model.layers[:fine_tune_at]:
+                                        layer.trainable = False
+
+                                    print(f"🔧 Fine-tuning configurado: {fine_tune_at} capas congeladas, {15} entrenables")
+
+                                    # Compilar con learning rate de fine-tuning
+                                    model.compile(
+                                        optimizer=keras.optimizers.Adam(learning_rate=0.001 / 10),
+                                        loss='categorical_crossentropy',
+                                        metrics=['accuracy']
+                                    )
+                                else:
+                                    # Estrategia estándar sin fine-tuning
+                                    model, _ = build_efficientnet_model()
+
+                                    # Compilar con métricas básicas
+                                    model.compile(
+                                        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                                        loss='categorical_crossentropy',
+                                        metrics=['accuracy']
+                                    )
+                            else:
+                                # CNN simple
+                                model = build_simple_cnn_model()
+
+                                # Compilar con métricas básicas
+                                model.compile(
+                                    optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                                    loss='categorical_crossentropy',
+                                    metrics=['accuracy']
+                                )
+
+                            # Intentar cargar pesos
+                            print(f"📊 Modelo reconstruido tiene {len(model.layers)} capas")
+
+                            # Debug: Mostrar información de los pesos guardados
+                            try:
+                                import h5py
+                                with h5py.File(latest_model_path_to_save, 'r') as f:
+                                    print(f"📦 Archivo de pesos contiene información para {len(f.keys())} grupos")
+                            except Exception:
+                                print(f"📦 Analizando archivo de pesos...")
+
+                            model.load_weights(latest_model_path_to_save)
+                            print(Fore.GREEN + f"✅ Pesos cargados exitosamente ({strategy_name})" + Style.RESET_ALL)
+                            model_loaded = True
+                            break
+
+                        except Exception as e:
+                            error_msg = str(e)
+                            if "Layer count mismatch" in error_msg:
+                                print(f"❌ {strategy_name}: Incompatibilidad de capas - {error_msg}")
+                            elif "axes don't match array" in error_msg:
+                                print(f"❌ {strategy_name}: Incompatibilidad de dimensiones - {error_msg}")
+                            else:
+                                print(f"❌ {strategy_name}: Error - {error_msg}")
+                            continue
+
+                    if not model_loaded:
+                        print(Fore.RED + "❌ No se pudo reconstruir el modelo con ninguna estrategia" + Style.RESET_ALL)
+                        print(Fore.YELLOW + "💡 Información del archivo:" + Style.RESET_ALL)
+                        print(f"   📁 Archivo: {latest_model_path_to_save}")
+                        if model_info:
+                            print(f"   📄 Config: {model_info}")
+                        raise ValueError("No se pudo reconstruir el modelo compatible con los pesos guardados")
+
+                else:
+                    # Intentar cargar modelo completo (.keras o .h5)
+                    try:
+                        model = keras.models.load_model(
+                            latest_model_path_to_save,
+                            custom_objects={'DiseaseRecallMetric': DiseaseRecallMetric}
+                        )
+
+                        useefficientnet = 'EfficientNet' in model_filename or 'efficientnet' in model_filename.lower()
+
+                    except ValueError as e:
+                        if "No model config found" in str(e):
+                            # Es un archivo de solo pesos con extensión .h5/.keras
+                            print(Fore.YELLOW + "⚠️  Archivo contiene solo pesos, reconstruyendo modelo..." + Style.RESET_ALL)
+
+                            # Detectar tipo por nombre del archivo
+                            useefficientnet = 'EfficientNet' in model_filename or 'efficientnet' in model_filename.lower()
+
+                            print(f"🔍 Detectado tipo: {'EfficientNet' if useefficientnet else 'CNN simple'} basado en nombre: {model_filename}")
+
+                            # Usar la misma lógica de múltiples estrategias que para .weights.h5
+                            reconstruction_strategies = []
+
+                            if useefficientnet:
+                                print("🏗️  Reconstruyendo EfficientNetB0...")
+                                reconstruction_strategies = [
+                                    ("sin fine-tuning", "standard"),
+                                    ("con fine-tuning", "finetuning"),
+                                ]
+                            else:
+                                print("🏗️  Reconstruyendo CNN simple...")
+                                reconstruction_strategies = [
+                                    ("CNN estándar", "standard"),
+                                ]
+
+                            # Probar cada estrategia hasta encontrar una compatible
+                            model_loaded = False
+                            for strategy_name, strategy_type in reconstruction_strategies:
+                                try:
+                                    print(f"🔍 Intentando estrategia: {strategy_name}...")
+
+                                    if useefficientnet:
+                                        if strategy_type == "finetuning":
+                                            # Estrategia con fine-tuning
+                                            model, base_model = build_efficientnet_model()
+
+                                            # Aplicar configuración de fine-tuning
+                                            base_model.trainable = True
+                                            fine_tune_at = len(base_model.layers) - 15
+                                            for layer in base_model.layers[:fine_tune_at]:
+                                                layer.trainable = False
+
+                                            print(f"🔧 Fine-tuning configurado: {fine_tune_at} capas congeladas, {15} entrenables")
+
+                                            # Compilar con learning rate de fine-tuning
+                                            model.compile(
+                                                optimizer=keras.optimizers.Adam(learning_rate=0.001 / 10),
+                                                loss='categorical_crossentropy',
+                                                metrics=['accuracy']
+                                            )
+                                        else:
+                                            # Estrategia estándar sin fine-tuning
+                                            model, _ = build_efficientnet_model()
+
+                                            # Compilar con métricas básicas
+                                            model.compile(
+                                                optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                                                loss='categorical_crossentropy',
+                                                metrics=['accuracy']
+                                            )
+                                    else:
+                                        # CNN simple
+                                        model = build_simple_cnn_model()
+
+                                        # Compilar con métricas básicas
+                                        model.compile(
+                                            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                                            loss='categorical_crossentropy',
+                                            metrics=['accuracy']
+                                        )
+
+                                    # Intentar cargar pesos
+                                    print(f"📊 Modelo reconstruido tiene {len(model.layers)} capas")
+
+                                    # Debug: Mostrar información de los pesos guardados
+                                    try:
+                                        import h5py
+                                        with h5py.File(latest_model_path_to_save, 'r') as f:
+                                            print(f"📦 Archivo de pesos contiene información para {len(f.keys())} grupos")
+                                    except Exception:
+                                        print(f"📦 Analizando archivo de pesos...")
+
+                                    model.load_weights(latest_model_path_to_save)
+                                    print(Fore.GREEN + f"✅ Pesos cargados exitosamente ({strategy_name})" + Style.RESET_ALL)
+                                    model_loaded = True
+                                    break
+
+                                except Exception as load_error:
+                                    error_msg = str(load_error)
+                                    if "Layer count mismatch" in error_msg:
+                                        print(f"❌ {strategy_name}: Incompatibilidad de capas - {error_msg}")
+                                    elif "axes don't match array" in error_msg:
+                                        print(f"❌ {strategy_name}: Incompatibilidad de dimensiones - {error_msg}")
+                                    else:
+                                        print(f"❌ {strategy_name}: Error - {error_msg}")
+                                    continue
+
+                            if not model_loaded:
+                                print(Fore.RED + "❌ No se pudo reconstruir el modelo con ninguna estrategia" + Style.RESET_ALL)
+                                print(Fore.YELLOW + "💡 Información del archivo:" + Style.RESET_ALL)
+                                print(f"   📁 Archivo: {latest_model_path_to_save}")
+                                print(f"   🏷️  Nombre: {model_filename}")
+                                print(f"   🔍 Tipo detectado: {'EfficientNet' if useefficientnet else 'CNN'}")
+                                raise ValueError("No se pudo reconstruir el modelo compatible con los pesos guardados")
+
+                        else:
+                            raise
+
+                # Recompilar con todas las métricas si se solicita
+                if compile_with_metrics:
+                    print(Fore.BLUE + "🔧 Recompilando con métricas completas..." + Style.RESET_ALL)
+                    model.compile(
+                        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                        loss='categorical_crossentropy',
+                        metrics=[
+                            'accuracy',
+                            keras.metrics.Recall(name='recall'),
+                            keras.metrics.Precision(name='precision'),
+                            DiseaseRecallMetric(),
+                            keras.metrics.AUC(name='auc')
+                        ]
+                    )
+
+                print(Fore.GREEN + "✅ Modelo cargado exitosamente desde GCS" + Style.RESET_ALL)
+                print(f"🏷️  Tipo: {'EfficientNetB0' if useefficientnet else 'CNN simple'}")
+                print(f"📁 Archivo local: {latest_model_path_to_save}")
+
+                return model, useefficientnet
+
+            except Exception as e:
+                print(Fore.RED + f"❌ Error al cargar modelo descargado: {e}" + Style.RESET_ALL)
+                import traceback
+                traceback.print_exc()
+
+                print(f"{Fore.YELLOW}🔄 Intentando fallback a almacenamiento local...{Style.RESET_ALL}")
+                return load_from_local()
+
+        except Exception as e:
+            print(Fore.RED + f"❌ Error al conectar con GCS: {e}" + Style.RESET_ALL)
+            print(f"{Fore.YELLOW}🔄 Intentando fallback a almacenamiento local...{Style.RESET_ALL}")
+            return load_from_local()
 
     elif MODEL_TARGET == "mlflow":
         print(Fore.MAGENTA + f"\n📥 Cargando modelo desde MLflow (stage: {stage})..." + Style.RESET_ALL)
@@ -442,7 +749,13 @@ def save_results(params: dict, metrics: dict):
 
 def save_model(model: keras.Model = None) -> None:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    model_path = os.path.join(LOCAL_REGISTRY_PATH, "models", f"{timestamp}.keras")
+    
+    # Detectar tipo de modelo
+    model_type = 'EfficientNet' if any('efficientnet' in layer.name.lower() for layer in model.layers) else 'CNN'
+    
+    # Usar convención de nombres consistente
+    model_filename = f"model_{model_type}_{timestamp}.keras"
+    model_path = os.path.join(LOCAL_REGISTRY_PATH, "models", model_filename)
 
     try:
         model.save(model_path)
@@ -453,12 +766,14 @@ def save_model(model: keras.Model = None) -> None:
             print(Fore.YELLOW + "⚠️  Error de serialización detectado" + Style.RESET_ALL)
             print(Fore.BLUE + "🔄 Guardando en formato de pesos separados..." + Style.RESET_ALL)
 
-            # Guardar pesos
-            weights_path = os.path.join(LOCAL_REGISTRY_PATH, "models", f"{timestamp}.weights.h5")
+            # Guardar pesos con convención consistente
+            weights_filename = f"model_{model_type}_{timestamp}.weights.h5"
+            weights_path = os.path.join(LOCAL_REGISTRY_PATH, "models", weights_filename)
             model.save_weights(weights_path)
 
             # Guardar configuración del modelo (arquitectura)
-            config_path = os.path.join(LOCAL_REGISTRY_PATH, "models", f"{timestamp}_config.json")
+            config_filename = f"model_{model_type}_{timestamp}_config.json"
+            config_path = os.path.join(LOCAL_REGISTRY_PATH, "models", config_filename)
             import json
 
             # Guardar info básica sobre el modelo
@@ -467,7 +782,7 @@ def save_model(model: keras.Model = None) -> None:
                 'input_shape': list(model.input_shape) if model.input_shape else None,
                 'output_shape': list(model.output_shape) if model.output_shape else None,
                 'num_layers': len(model.layers),
-                'model_type': 'EfficientNet' if any('efficientnet' in layer.name.lower() for layer in model.layers) else 'CNN'
+                'model_type': model_type
             }
 
             with open(config_path, 'w') as f:

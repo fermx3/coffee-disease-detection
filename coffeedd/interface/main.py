@@ -14,10 +14,11 @@ from coffeedd.ml_logic.custom_weights import get_class_weights
 from coffeedd.ml_logic.registry_ml import load_model, save_results, save_model, mlflow_transition_model, mlflow_run
 from coffeedd.ml_logic.model import initialize_model, compile_model, train_model
 from coffeedd.ml_logic.data_analysis import plot_training_metrics_combined, analyze_training_convergence_combined, analyze_false_negatives, analyze_disease_recall
+from coffeedd.ml_logic.gcs_upload import upload_latest_model_to_gcs, list_models_in_gcs
 from coffeedd.params import LOCAL_DATA_PATH, CLASS_NAMES, SAMPLE_SIZE, BATCH_SIZE, FINE_TUNE, SAMPLE_NAME, MODEL_TARGET, MODELS_PATH, NUM_CLASSES
 
 @mlflow_run
-def train():
+def train(metrics_viz=True, test_mode=False):
     print(Fore.MAGENTA + "\n⭐️ Empezando el entrenamiento del modelo... ⭐️" + Style.RESET_ALL)
 
     print(f"🚀 Cargando datos... con {SAMPLE_NAME}")
@@ -64,30 +65,79 @@ def train():
     val_disease_recall = np.max(history.history['val_disease_recall'])
     print(Fore.GREEN + f"\n✅ Entrenamiento completado. Mejor disease recall en validación: {val_disease_recall:.4f}" + Style.RESET_ALL)
 
+    # ==========================================
+    # NUEVO: VISUALIZACIONES DE MÉTRICAS DE ENTRENAMIENTO (HISTORIAL COMBINADO)
+    # ==========================================
+    if metrics_viz:
+        training_viz_metrics = {}
+        convergence_metrics = {}
+
+        if history is not None:
+            print(f"\n{Fore.MAGENTA}📊 Generando visualizaciones de entrenamiento...{Style.RESET_ALL}")
+
+            model_name = "efficientnet" if useefficientnet else "simple_CNN",
+            model_name = model_name[0]
+
+            # Generar visualizaciones de métricas de entrenamiento
+            training_viz_metrics = plot_training_metrics_combined(
+                combined_history=history,
+                model_name=model_name,
+                sample_name=SAMPLE_NAME,
+                test_labels=test_labels,
+                y_pred_test_classes=None,
+                verbose=True
+            )
+
+            # Análisis de convergencia del entrenamiento
+            convergence_metrics = analyze_training_convergence_combined(
+                combined_history=history,
+                verbose=True
+            )
+            print(f"     - Visualización entrenamiento: {len(training_viz_metrics)}")
+            print(f"     - Convergencia: {len(convergence_metrics)}")
+
+            # Información sobre archivos generados
+            files_generated = []
+
+            if training_viz_metrics:
+                training_metrics_file = f'{MODELS_PATH}/training_metrics_{model_name}_{SAMPLE_NAME}.png'
+                files_generated.append(training_metrics_file)
+
+            print(f"   • Archivos generados: {len(files_generated)}")
+            for i, file_path in enumerate(files_generated, 1):
+                print(f"     {i}. {file_path}")
+
+
+        else:
+            print(f"\n{Fore.YELLOW}⚠️  No se proporcionó historial de entrenamiento. Saltando visualizaciones.{Style.RESET_ALL}")
+
+
     params = dict(
-        context="train",
+        context="train" if not test_mode else "test_train",
         training_set_size=SAMPLE_NAME,
         img_count=len(train_labels),
         useefficientnet=useefficientnet,
         fine_tune=FINE_TUNE
     )
 
-    # Save results on the hard drive using coffeedd.ml_logic.registry
-    save_results(params=params, metrics=dict(val_recall=val_recall, val_disease_recall=val_disease_recall))
+    # Guardar resultados y modelo entrenado si no es modo test
+    if not test_mode:
+        # Save results on the hard drive using coffeedd.ml_logic.registry
+        save_results(params=params, metrics=dict(val_recall=val_recall, val_disease_recall=val_disease_recall, **training_viz_metrics, **convergence_metrics))
 
-    # Save model weight on the hard drive (and optionally on GCS too!)
-    save_model(model=model)
+        # Save model weight on the hard drive (and optionally on GCS too!)
+        save_model(model=model)
 
-    # El ultimo modelo debe ser movido a "Staging" en MLflow si se usa MLflow
-    if MODEL_TARGET == "mlflow":
-        mlflow_transition_model(current_stage="None", new_stage="Staging")
+        # El ultimo modelo debe ser movido a "Staging" en MLflow si se usa MLflow
+        if MODEL_TARGET == "mlflow":
+            mlflow_transition_model(current_stage="None", new_stage="Staging")
 
     print(Fore.MAGENTA + "\n🏁 Proceso de entrenamiento finalizado. 🏁" + Style.RESET_ALL)
 
     return {"val_recall":val_recall, "val_disease_recall":val_disease_recall}
 
 @mlflow_run
-def evaluate(combined_history=None):
+def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     """
     Evalúa el modelo entrenado en el test set y genera métricas detalladas
 
@@ -174,81 +224,59 @@ def evaluate(combined_history=None):
         )
         print(classification_rep)
 
-    # Matriz de confusión
-    print(f"\n{Fore.YELLOW}📈 Generando matriz de confusión...{Style.RESET_ALL}")
-    cm = confusion_matrix(test_labels, y_pred_test_classes, labels=unique_test_classes)
+    if confusion_matrix_viz:
+        # Matriz de confusión
+        print(f"\n{Fore.YELLOW}📈 Generando matriz de confusión...{Style.RESET_ALL}")
+        cm = confusion_matrix(test_labels, y_pred_test_classes, labels=unique_test_classes)
 
-    # Usar solo nombres de clases presentes para los ejes
-    axis_labels = [CLASS_NAMES[i] for i in unique_test_classes]
+        # Usar solo nombres de clases presentes para los ejes
+        axis_labels = [CLASS_NAMES[i] for i in unique_test_classes]
 
-    # Crear directorio de modelos si no existe
-    os.makedirs(MODELS_PATH, exist_ok=True)
+        # Crear directorio de modelos si no existe
+        os.makedirs(MODELS_PATH, exist_ok=True)
 
-    # Nombre descriptivo para la matriz de confusión
-    confusion_matrix_filename = f'{MODELS_PATH}/confusion_matrix_{model_name}_{sample_name}.png'
+        # Nombre descriptivo para la matriz de confusión
+        confusion_matrix_filename = f'{MODELS_PATH}/confusion_matrix_{model_name}_{sample_name}.png'
 
-    # Crear la matriz de confusión
-    plt.figure(figsize=(12, 10))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                xticklabels=axis_labels, yticklabels=axis_labels,
-                cbar_kws={'label': 'Count'})
-    plt.title(f'Matriz de Confusión - Test Set\n{model_name} - {sample_name}',
-              fontsize=16, fontweight='bold')
-    plt.ylabel('Etiqueta Real', fontsize=12)
-    plt.xlabel('Predicción', fontsize=12)
-    plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
-    plt.tight_layout()
-    plt.savefig(confusion_matrix_filename, dpi=300, bbox_inches='tight')
-    plt.close()  # Cerrar la figura para liberar memoria
+        # Crear la matriz de confusión
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                    xticklabels=axis_labels, yticklabels=axis_labels,
+                    cbar_kws={'label': 'Count'})
+        plt.title(f'Matriz de Confusión - Test Set\n{model_name} - {sample_name}',
+                fontsize=16, fontweight='bold')
+        plt.ylabel('Etiqueta Real', fontsize=12)
+        plt.xlabel('Predicción', fontsize=12)
+        plt.xticks(rotation=45, ha='right')
+        plt.yticks(rotation=0)
+        plt.tight_layout()
+        plt.savefig(confusion_matrix_filename, dpi=300, bbox_inches='tight')
+        plt.close()  # Cerrar la figura para liberar memoria
 
-    print(f"{Fore.GREEN}💾 Matriz de confusión guardada: {confusion_matrix_filename}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}💾 Matriz de confusión guardada: {confusion_matrix_filename}{Style.RESET_ALL}")
 
     # ==========================================
     # ANÁLISIS DE FALSOS NEGATIVOS
     # ==========================================
-    print(f"\n{Fore.MAGENTA}🔍 Ejecutando análisis de falsos negativos...{Style.RESET_ALL}")
+    fn_metrics = {}
+    disease_metrics = {}
 
-    # Análisis de falsos negativos por clase
-    fn_metrics = analyze_false_negatives(
-        test_labels=test_labels,
-        y_pred_test_classes=y_pred_test_classes,
-        verbose=True
-    )
+    if false_negatives_analysis:
+        print(f"\n{Fore.MAGENTA}🔍 Ejecutando análisis de falsos negativos...{Style.RESET_ALL}")
 
-    # Análisis de disease recall (detección binaria de enfermedades)
-    disease_metrics = analyze_disease_recall(
-        test_labels=test_labels,
-        y_pred_test_classes=y_pred_test_classes,
-        verbose=True
-    )
-
-    # ==========================================
-    # NUEVO: VISUALIZACIONES DE MÉTRICAS DE ENTRENAMIENTO (HISTORIAL COMBINADO)
-    # ==========================================
-    training_viz_metrics = {}
-    convergence_metrics = {}
-
-    if combined_history is not None:
-        print(f"\n{Fore.MAGENTA}📊 Generando visualizaciones de entrenamiento...{Style.RESET_ALL}")
-
-        # Generar visualizaciones de métricas de entrenamiento
-        training_viz_metrics = plot_training_metrics_combined(
-            combined_history=combined_history,
-            model_name=model_name,
-            sample_name=sample_name,
+        # Análisis de falsos negativos por clase
+        fn_metrics = analyze_false_negatives(
             test_labels=test_labels,
             y_pred_test_classes=y_pred_test_classes,
             verbose=True
         )
 
-        # Análisis de convergencia del entrenamiento
-        convergence_metrics = analyze_training_convergence_combined(
-            combined_history=combined_history,
+        # Análisis de disease recall (detección binaria de enfermedades)
+        disease_metrics = analyze_disease_recall(
+            test_labels=test_labels,
+            y_pred_test_classes=y_pred_test_classes,
             verbose=True
         )
-    else:
-        print(f"\n{Fore.YELLOW}⚠️  No se proporcionó historial de entrenamiento. Saltando visualizaciones.{Style.RESET_ALL}")
 
     # ==========================================
     # GUARDAR RESULTADOS EN MLFLOW
@@ -262,7 +290,6 @@ def evaluate(combined_history=None):
         useefficientnet=useefficientnet,
         classes_in_test=len(unique_test_classes),
         total_classes=NUM_CLASSES,
-        has_training_history=combined_history is not None
     )
 
     # Métricas base del modelo
@@ -272,23 +299,21 @@ def evaluate(combined_history=None):
         test_recall=test_recall
     )
 
-    # Combinar TODAS las métricas para MLflow
+    # Combinar TODAS las métricas para MLflow (solo las que existen)
     all_metrics = {
         **base_metrics,               # Métricas básicas de evaluación
-        **fn_metrics,                # Análisis de falsos negativos
-        **disease_metrics,           # Métricas de disease recall
-        **training_viz_metrics,      # Métricas de visualización de entrenamiento
-        **convergence_metrics        # Análisis de convergencia
+        **fn_metrics,                # Análisis de falsos negativos (vacío si no se ejecutó)
+        **disease_metrics,           # Métricas de disease recall (vacío si no se ejecutó)
     }
 
     print(f"\n{Fore.CYAN}📤 Subiendo métricas a MLflow...{Style.RESET_ALL}")
     print(f"   • Parámetros: {len(params)} items")
     print(f"   • Métricas totales: {len(all_metrics)} items")
     print(f"     - Evaluación básica: {len(base_metrics)}")
-    print(f"     - Falsos negativos: {len(fn_metrics)}")
-    print(f"     - Disease detection: {len(disease_metrics)}")
-    print(f"     - Visualización entrenamiento: {len(training_viz_metrics)}")
-    print(f"     - Convergencia: {len(convergence_metrics)}")
+    if fn_metrics:
+        print(f"     - Falsos negativos: {len(fn_metrics)}")
+    if disease_metrics:
+        print(f"     - Disease detection: {len(disease_metrics)}")
 
     # Guardar resultados (esto incluirá TODAS las métricas en MLflow)
     save_results(params=params, metrics=all_metrics)
@@ -301,15 +326,16 @@ def evaluate(combined_history=None):
     print(f"   • Clases evaluadas: {len(unique_test_classes)}/{NUM_CLASSES}")
     print(f"   • Accuracy final: {test_accuracy:.4f}")
     print(f"   • Recall final: {test_recall:.4f}")
-    print(f"   • Disease Recall: {disease_metrics['disease_recall']:.4f}")
-    print(f"   • Falsos Negativos totales: {fn_metrics.get('total_false_negatives', 0)}")
-    print(f"   • Tasa FN global: {fn_metrics.get('overall_false_negative_rate', 0):.1f}%")
+
+    # Solo mostrar métricas si se calcularon
+    if disease_metrics and 'disease_recall' in disease_metrics:
+        print(f"   • Disease Recall: {disease_metrics['disease_recall']:.4f}")
+    if fn_metrics and 'total_false_negatives' in fn_metrics:
+        print(f"   • Falsos Negativos totales: {fn_metrics['total_false_negatives']}")
+        print(f"   • Tasa FN global: {fn_metrics.get('overall_false_negative_rate', 0):.1f}%")
 
     # Información sobre archivos generados
     files_generated = [confusion_matrix_filename]
-    if training_viz_metrics:
-        training_metrics_file = f'{MODELS_PATH}/training_metrics_{model_name}_{sample_name}.png'
-        files_generated.append(training_metrics_file)
 
     print(f"   • Archivos generados: {len(files_generated)}")
     for i, file_path in enumerate(files_generated, 1):
@@ -322,16 +348,14 @@ def evaluate(combined_history=None):
         "test_loss": test_loss,
         "test_accuracy": test_accuracy,
         "test_recall": test_recall,
-        "disease_recall": disease_metrics['disease_recall'],
+        "disease_recall": disease_metrics.get('disease_recall', None),
         "classes_evaluated": len(unique_test_classes),
         "total_images": len(test_labels),
         "confusion_matrix_path": confusion_matrix_filename,
-        "total_false_negatives": fn_metrics.get('total_false_negatives', 0),
-        "false_negative_rate": fn_metrics.get('overall_false_negative_rate', 0),
+        "total_false_negatives": fn_metrics.get('total_false_negatives', None),
+        "false_negative_rate": fn_metrics.get('overall_false_negative_rate', None),
         "mlflow_metrics_count": len(all_metrics),
         "files_generated": files_generated,
-        "has_training_visualizations": bool(training_viz_metrics),
-        "convergence_analysis": convergence_metrics
     }
 
 def pred(img_source=None) -> dict:
@@ -396,3 +420,82 @@ def pred(img_source=None) -> dict:
             for i in range(len(CLASS_NAMES))
         }
     }
+
+@mlflow_run
+def upload_model_to_gcs(model_version: str = None, dry_run: bool = False):
+    """
+    Sube el último modelo entrenado a Google Cloud Storage
+    
+    Args:
+        model_version: Versión específica del modelo (si None, usa timestamp)
+        dry_run: Si es True, solo simula la subida sin ejecutarla
+        
+    Returns:
+        dict: Información sobre la subida
+    """
+    print(Fore.MAGENTA + "\n☁️  Subiendo modelo a GCS... ☁️" + Style.RESET_ALL)
+    
+    try:
+        # Ejecutar subida
+        result = upload_latest_model_to_gcs(
+            model_version=model_version,
+            include_metadata=True,
+            dry_run=dry_run
+        )
+        
+        if not dry_run:
+            # Guardar información de la subida en MLflow
+            save_results(
+                params={
+                    "context": "gcs_upload",
+                    "model_version": result["model_version"],
+                    "gcs_bucket": "configured",
+                    "include_metadata": True
+                },
+                metrics={
+                    "model_size_mb": result["model_size_mb"],
+                    "metadata_fields": result["metadata_fields"],
+                    "upload_success": 1 if result["success"] else 0
+                }
+            )
+            
+            print(f"\n{Fore.GREEN}✅ Modelo subido exitosamente a GCS{Style.RESET_ALL}")
+            print(f"   • Versión: {result['model_version']}")
+            print(f"   • Tamaño: {result['model_size_mb']:.2f} MB")
+            print(f"   • Ruta GCS: {result['gcs_paths']['model']}")
+        
+        return result
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error subiendo modelo: {e}{Style.RESET_ALL}")
+        raise
+
+def list_gcs_models(limit: int = 10):
+    """
+    Lista los modelos disponibles en GCS
+    
+    Args:
+        limit: Número máximo de modelos a mostrar
+    """
+    print(Fore.CYAN + "\n📋 Modelos en Google Cloud Storage" + Style.RESET_ALL)
+    print("="*60)
+    
+    try:
+        models = list_models_in_gcs(limit=limit)
+        
+        if not models:
+            print(f"{Fore.YELLOW}📂 No se encontraron modelos en GCS{Style.RESET_ALL}")
+            return []
+        
+        print(f"\n📊 Encontrados {len(models)} modelos:")
+        for i, model in enumerate(models, 1):
+            print(f"\n{i}. {model['name']}")
+            print(f"   📏 Tamaño: {model['size_mb']:.2f} MB")
+            print(f"   📅 Creado: {model['created'].strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   🔗 Ruta: {model['gcs_path']}")
+        
+        return models
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error listando modelos: {e}{Style.RESET_ALL}")
+        return []

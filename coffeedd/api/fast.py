@@ -26,8 +26,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from coffeedd.interface.main import pred
 from coffeedd.params import SUPPORTED_FORMATS
 
-import base64
-
 app = FastAPI(
     title="Coffee Disease Detection API",
     description="API for detecting diseases in coffee plants using computer vision"
