@@ -77,21 +77,64 @@ def load_model(stage="Production", compile_with_metrics=True) -> Tuple[keras.Mod
                 # Reconstruir la arquitectura
                 if useefficientnet:
                     print("🏗️  Reconstruyendo EfficientNetB0...")
-                    model, _ = build_efficientnet_model()
+
+                    # Intentar cargar como modelo sin fine-tuning primero
+                    try:
+                        print("🔍 Intentando cargar como modelo sin fine-tuning...")
+                        model, _ = build_efficientnet_model()
+
+                        # Compilar con métricas básicas
+                        model.compile(
+                            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                            loss='categorical_crossentropy',
+                            metrics=['accuracy']
+                        )
+
+                        # Intentar cargar pesos
+                        model.load_weights(most_recent_model_path_on_disk)
+                        print(Fore.GREEN + "✅ Pesos cargados exitosamente (sin fine-tuning)" + Style.RESET_ALL)
+
+                    except ValueError as e:
+                        if "axes don't match array" in str(e):
+                            print("🔄 Intentando cargar como modelo con fine-tuning...")
+
+                            # Recrear con fine-tuning
+                            model, base_model = build_efficientnet_model()
+
+                            # Aplicar configuración de fine-tuning
+                            base_model.trainable = True
+                            fine_tune_at = len(base_model.layers) - 15
+                            for layer in base_model.layers[:fine_tune_at]:
+                                layer.trainable = False
+
+                            print(f"🔧 Fine-tuning configurado: {fine_tune_at} capas congeladas, {15} entrenables")
+
+                            # Compilar con learning rate de fine-tuning
+                            model.compile(
+                                optimizer=keras.optimizers.Adam(learning_rate=0.001 / 10),
+                                loss='categorical_crossentropy',
+                                metrics=['accuracy']
+                            )
+
+                            # Cargar pesos
+                            model.load_weights(most_recent_model_path_on_disk)
+                            print(Fore.GREEN + "✅ Pesos cargados exitosamente (con fine-tuning)" + Style.RESET_ALL)
+                        else:
+                            raise
                 else:
                     print("🏗️  Reconstruyendo CNN simple...")
                     model = build_simple_cnn_model()
 
-                # Compilar el modelo (necesario antes de cargar pesos)
-                model.compile(
-                    optimizer=keras.optimizers.Adam(learning_rate=0.001),
-                    loss='categorical_crossentropy',
-                    metrics=['accuracy', 'recall', 'precision', 'auc']
-                )
+                    # Compilar el modelo (necesario antes de cargar pesos)
+                    model.compile(
+                        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                        loss='categorical_crossentropy',
+                        metrics=['accuracy']  # Solo métricas básicas
+                    )
 
-                # Cargar los pesos
-                model.load_weights(most_recent_model_path_on_disk)
-                print(Fore.GREEN + "✅ Pesos cargados exitosamente" + Style.RESET_ALL)
+                    # Cargar los pesos
+                    model.load_weights(most_recent_model_path_on_disk)
+                    print(Fore.GREEN + "✅ Pesos cargados exitosamente" + Style.RESET_ALL)
 
             else:
                 # Intentar cargar modelo completo (.keras o SavedModel)
@@ -111,24 +154,67 @@ def load_model(stage="Production", compile_with_metrics=True) -> Tuple[keras.Mod
                         # Detectar tipo por nombre del archivo
                         useefficientnet = 'EfficientNet' in os.path.basename(most_recent_model_path_on_disk)
 
-                        # Reconstruir arquitectura
+                        # Reconstruir arquitectura con detección automática de fine-tuning
                         if useefficientnet:
                             print("🏗️  Reconstruyendo EfficientNetB0...")
-                            model, _ = build_efficientnet_model()
+
+                            # Intentar cargar como modelo sin fine-tuning primero
+                            try:
+                                print("🔍 Intentando cargar como modelo sin fine-tuning...")
+                                model, _ = build_efficientnet_model()
+
+                                # Compilar antes de cargar pesos
+                                model.compile(
+                                    optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                                    loss='categorical_crossentropy',
+                                    metrics=['accuracy']
+                                )
+
+                                # Cargar pesos
+                                model.load_weights(most_recent_model_path_on_disk)
+                                print(Fore.GREEN + "✅ Pesos cargados exitosamente (sin fine-tuning)" + Style.RESET_ALL)
+
+                            except ValueError as load_error:
+                                if "axes don't match array" in str(load_error):
+                                    print("🔄 Intentando cargar como modelo con fine-tuning...")
+
+                                    # Recrear con fine-tuning
+                                    model, base_model = build_efficientnet_model()
+
+                                    # Aplicar configuración de fine-tuning
+                                    base_model.trainable = True
+                                    fine_tune_at = len(base_model.layers) - 15
+                                    for layer in base_model.layers[:fine_tune_at]:
+                                        layer.trainable = False
+
+                                    print(f"🔧 Fine-tuning configurado: {fine_tune_at} capas congeladas, {15} entrenables")
+
+                                    # Compilar con learning rate de fine-tuning
+                                    model.compile(
+                                        optimizer=keras.optimizers.Adam(learning_rate=0.001 / 10),
+                                        loss='categorical_crossentropy',
+                                        metrics=['accuracy']
+                                    )
+
+                                    # Cargar pesos
+                                    model.load_weights(most_recent_model_path_on_disk)
+                                    print(Fore.GREEN + "✅ Pesos cargados exitosamente (con fine-tuning)" + Style.RESET_ALL)
+                                else:
+                                    raise
                         else:
                             print("🏗️  Reconstruyendo CNN simple...")
                             model = build_simple_cnn_model()
 
-                        # Compilar antes de cargar pesos
-                        model.compile(
-                            optimizer=keras.optimizers.Adam(learning_rate=0.001),
-                            loss='categorical_crossentropy',
-                            metrics=['accuracy', 'recall', 'precision', 'auc']
-                        )
+                            # Compilar antes de cargar pesos
+                            model.compile(
+                                optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                                loss='categorical_crossentropy',
+                                metrics=['accuracy', 'recall', 'precision', 'auc']
+                            )
 
-                        # Cargar pesos
-                        model.load_weights(most_recent_model_path_on_disk)
-                        print(Fore.GREEN + "✅ Pesos cargados exitosamente" + Style.RESET_ALL)
+                            # Cargar pesos
+                            model.load_weights(most_recent_model_path_on_disk)
+                            print(Fore.GREEN + "✅ Pesos cargados exitosamente" + Style.RESET_ALL)
                     else:
                         raise
 
