@@ -23,6 +23,9 @@ run_split_resized_dataset:
 run_train:
 	python -c 'from coffeedd.interface.main import train; train()'
 
+run_test_train:
+	python -c 'from coffeedd.interface.main import train; train(test_mode=True)'
+
 run_pred:
 	python -c 'from coffeedd.interface.main import pred; pred()'
 
@@ -31,6 +34,9 @@ run_evaluate:
 
 run_api:
 	uvicorn coffeedd.api.fast:app --reload
+
+upload_model:
+	python -c "from coffeedd.interface.main import upload_model_to_gcs; upload_model_to_gcs()"
 
 #################### DEFAULT ACTIONS ###################
 default: pylint pytest
@@ -53,6 +59,13 @@ pylint:
 
 pytest:
 	PYTHONDONTWRITEBYTECODE=1 pytest -v --color=yes
+
+#################  GCS UPLOAD TESTS  #####################
+test_gcs:
+	python -m pytest tests/test_gcs_upload.py -v -s
+
+test_gcs_real:
+	python tests/test_gcs_upload.py
 
 test_gcp_setup:
 	@pytest \
