@@ -425,16 +425,16 @@ def pred(img_source=None) -> dict:
 def upload_model_to_gcs(model_version: str = None, dry_run: bool = False):
     """
     Sube el último modelo entrenado a Google Cloud Storage
-    
+
     Args:
         model_version: Versión específica del modelo (si None, usa timestamp)
         dry_run: Si es True, solo simula la subida sin ejecutarla
-        
+
     Returns:
         dict: Información sobre la subida
     """
     print(Fore.MAGENTA + "\n☁️  Subiendo modelo a GCS... ☁️" + Style.RESET_ALL)
-    
+
     try:
         # Ejecutar subida
         result = upload_latest_model_to_gcs(
@@ -442,7 +442,7 @@ def upload_model_to_gcs(model_version: str = None, dry_run: bool = False):
             include_metadata=True,
             dry_run=dry_run
         )
-        
+
         if not dry_run:
             # Guardar información de la subida en MLflow
             save_results(
@@ -458,14 +458,14 @@ def upload_model_to_gcs(model_version: str = None, dry_run: bool = False):
                     "upload_success": 1 if result["success"] else 0
                 }
             )
-            
+
             print(f"\n{Fore.GREEN}✅ Modelo subido exitosamente a GCS{Style.RESET_ALL}")
             print(f"   • Versión: {result['model_version']}")
             print(f"   • Tamaño: {result['model_size_mb']:.2f} MB")
             print(f"   • Ruta GCS: {result['gcs_paths']['model']}")
-        
+
         return result
-        
+
     except Exception as e:
         print(f"{Fore.RED}❌ Error subiendo modelo: {e}{Style.RESET_ALL}")
         raise
@@ -473,29 +473,29 @@ def upload_model_to_gcs(model_version: str = None, dry_run: bool = False):
 def list_gcs_models(limit: int = 10):
     """
     Lista los modelos disponibles en GCS
-    
+
     Args:
         limit: Número máximo de modelos a mostrar
     """
     print(Fore.CYAN + "\n📋 Modelos en Google Cloud Storage" + Style.RESET_ALL)
     print("="*60)
-    
+
     try:
         models = list_models_in_gcs(limit=limit)
-        
+
         if not models:
             print(f"{Fore.YELLOW}📂 No se encontraron modelos en GCS{Style.RESET_ALL}")
             return []
-        
+
         print(f"\n📊 Encontrados {len(models)} modelos:")
         for i, model in enumerate(models, 1):
             print(f"\n{i}. {model['name']}")
             print(f"   📏 Tamaño: {model['size_mb']:.2f} MB")
             print(f"   📅 Creado: {model['created'].strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"   🔗 Ruta: {model['gcs_path']}")
-        
+
         return models
-        
+
     except Exception as e:
         print(f"{Fore.RED}❌ Error listando modelos: {e}{Style.RESET_ALL}")
         return []

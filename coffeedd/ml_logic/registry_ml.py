@@ -749,10 +749,10 @@ def save_results(params: dict, metrics: dict):
 
 def save_model(model: keras.Model = None) -> None:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
-    
+
     # Detectar tipo de modelo
     model_type = 'EfficientNet' if any('efficientnet' in layer.name.lower() for layer in model.layers) else 'CNN'
-    
+
     # Usar convención de nombres consistente
     model_filename = f"model_{model_type}_{timestamp}.keras"
     model_path = os.path.join(LOCAL_REGISTRY_PATH, "models", model_filename)
