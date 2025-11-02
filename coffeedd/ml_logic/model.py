@@ -112,20 +112,35 @@ def build_simple_cnn_model():
 
 def build_vgg16_model():
     """
-    Recreate the architecture used during training
+    VGG16 mejorado para dataset de 6K imágenes con mejor estabilidad
     Returns a Keras model.
     """
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-    base_model.trainable = False  # Freeze the base model
+    
+    # Estrategia híbrida: congelar primeras capas, entrenar las últimas
+    # VGG16 tiene 19 capas, congelar las primeras 15, entrenar las últimas 4
+    for i, layer in enumerate(base_model.layers):
+        if i < 15:  # Congelar primeras 15 capas
+            layer.trainable = False
+        else:      # Entrenar últimas 4 capas
+            layer.trainable = True
 
     model = Sequential([
         base_model,
-        layers.Flatten(),
-        layers.Dense(500, activation="relu"),
-        layers.Dropout(0.2),
-        layers.Dense(72, activation="relu"),
-        layers.Dropout(0.2),
-        layers.Dense(5, activation="softmax")  # Assuming 5 classes for coffee diseases
+        layers.GlobalAveragePooling2D(),  # Mejor que Flatten para reducir overfitting
+        layers.BatchNormalization(),     # Estabilizar gradientes
+        
+        # Reducir complejidad del head para evitar overfitting
+        layers.Dense(256, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.BatchNormalization(),
+        layers.Dropout(0.4),  # Dropout más agresivo
+        
+        layers.Dense(128, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.BatchNormalization(),
+        layers.Dropout(0.3),
+        
+        # Capa final con menor regularización
+        layers.Dense(5, activation="softmax")  # 5 clases para enfermedades del café
     ])
 
     return model
@@ -172,8 +187,21 @@ def build_efficientnet_model():
 
 def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     """Compila el modelo con el optimizador, la función de pérdida y las métricas adecuadas."""
+    
+    # Para VGG16: usar learning rate más conservador
+    if MODEL_ARCHITECTURE.lower() == "vgg16":
+        # Learning rate reducido para VGG16 transfer learning
+        learning_rate = min(learning_rate, 0.0001)  # Max 1e-4 para VGG16
+        print(f"🔧 VGG16 detectado: usando learning rate conservador {learning_rate}")
+    
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        optimizer=keras.optimizers.Adam(
+            learning_rate=learning_rate,
+            beta_1=0.9,      # Momentum más conservador
+            beta_2=0.999,    
+            epsilon=1e-07,   # Estabilidad numérica
+            clipnorm=1.0     # Gradient clipping para evitar explosión
+        ),
         loss='categorical_crossentropy',
         metrics=[
             'accuracy',
@@ -265,42 +293,82 @@ def train_model(
                     self.best_disease_recall = avg_disease_recall
                     print("✨ ¡Nuevo mejor recall de enfermedades!")
 
-    callbacks = [
-        keras.callbacks.EarlyStopping(
-            monitor='val_recall',  # Mantener recall como monitor principal
-            patience=15,  # Usar más paciencia para datasets pequeños
-            mode='max',
-            restore_best_weights=True,
-            verbose=1
-        ),
-        keras.callbacks.ReduceLROnPlateau(
-            monitor='val_recall',
-            factor=0.3,
-            patience=5,
-            min_lr=1e-8,
-            mode='max',
-            verbose=1
-        ),
-        keras.callbacks.ModelCheckpoint(
-            checkpoint_filename,
-            monitor='val_recall',
-            mode='max',
-            save_best_only=True,
-            save_weights_only=True,
-            verbose=1
-        ),
-        RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
-    ]
+    # Configurar callbacks específicos para cada arquitectura
+    if MODEL_ARCHITECTURE.lower() == "vgg16":
+        # VGG16: callbacks más conservadores para evitar oscilaciones
+        callbacks = [
+            keras.callbacks.EarlyStopping(
+                monitor='val_loss',  # Para VGG16, monitorear loss es más estable
+                patience=8,          # Menos paciencia para evitar overfitting
+                mode='min',
+                restore_best_weights=True,
+                verbose=1
+            ),
+            keras.callbacks.ReduceLROnPlateau(
+                monitor='val_loss',  # Usar loss para mayor estabilidad
+                factor=0.5,          # Reducción más gradual
+                patience=3,          # Reducir LR más rápido
+                min_lr=1e-7,
+                mode='min',
+                verbose=1
+            ),
+            keras.callbacks.ModelCheckpoint(
+                checkpoint_filename,
+                monitor='val_loss',
+                mode='min',
+                save_best_only=True,
+                save_weights_only=True,
+                verbose=1
+            ),
+            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
+        ]
+    else:
+        # Callbacks originales para CNN y EfficientNet
+        callbacks = [
+            keras.callbacks.EarlyStopping(
+                monitor='val_recall',  # Mantener recall como monitor principal
+                patience=15,  # Usar más paciencia para datasets pequeños
+                mode='max',
+                restore_best_weights=True,
+                verbose=1
+            ),
+            keras.callbacks.ReduceLROnPlateau(
+                monitor='val_recall',
+                factor=0.3,
+                patience=5,
+                min_lr=1e-8,
+                mode='max',
+                verbose=1
+            ),
+            keras.callbacks.ModelCheckpoint(
+                checkpoint_filename,
+                monitor='val_recall',
+                mode='max',
+                save_best_only=True,
+                save_weights_only=True,
+                verbose=1
+            ),
+            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
+        ]
 
     print("\n" + "="*60)
-    if MODEL_ARCHITECTURE.lower() != "cnn":
+    if MODEL_ARCHITECTURE.lower() == "vgg16":
+        print("🚂 ENTRENAMIENTO VGG16: Transfer Learning conservador (20 epochs)")
+        print("ℹ️  Estrategia: Entrenamiento gradual con learning rate bajo")
+    elif MODEL_ARCHITECTURE.lower() != "cnn":
         print(f"🚂 FASE 1: Entrenando con {MODEL_ARCHITECTURE} congelado (15 epochs)")
     else:
         print("🚂 ENTRENAMIENTO: Modelo CNN simple (30 epochs)")
     print("="*60)
 
-    # Ajustar epochs según tipo de modelo
-    initial_epochs = 15 if MODEL_ARCHITECTURE == "cnn" else 30
+    # Ajustar epochs según tipo de modelo y tamaño de dataset
+    if MODEL_ARCHITECTURE.lower() == "vgg16":
+        # VGG16: fewer epochs para evitar overfitting en 6K imágenes
+        initial_epochs = 20
+    elif MODEL_ARCHITECTURE.lower() == "cnn":
+        initial_epochs = 30
+    else:
+        initial_epochs = 15
 
     history_phase1 = model.fit(
         train_dataset,
@@ -312,12 +380,12 @@ def train_model(
     )
 
     print("✅ Fase 1 de entrenamiento completada")
-    print(f"📈Recall máximo en validación durante fase 1: {max(history_phase1.history['val_recall']):.4f}")
+    print(f"📈 Recall máximo en validación durante fase 1: {max(history_phase1.history['val_recall']):.4f}")
 
-    # Solo hacer fine-tuning si usamos EfficientNet Y tenemos suficientes datos Y la fase 1 fue exitosa
+    # Para VGG16 con 6K imágenes: NO hacer fine-tuning para evitar overfitting
     should_finetune = (
-        MODEL_ARCHITECTURE != "cnn" and
-        len(train_labels) >= 10000 and
+        MODEL_ARCHITECTURE.lower() == "efficientnet" and  # Solo EfficientNet
+        len(train_labels) >= 10000 and  # Dataset grande
         len(history_phase1.history['val_accuracy']) > 0 and
         max(history_phase1.history['val_accuracy']) > 0.60 and  # Umbral mínimo de accuracy
         fine_tune
@@ -335,7 +403,12 @@ def train_model(
         )
         combined_history = combine_histories(history_phase1, history_phase2)
     else:
-        if MODEL_ARCHITECTURE != "cnn":
+        if MODEL_ARCHITECTURE.lower() == "vgg16":
+            print("\n" + "="*60)
+            print("ℹ️  VGG16: No fine-tuning para dataset de 6K imágenes")
+            print("ℹ️  Transfer learning con capas finales entrenables es suficiente")
+            print("="*60)
+        elif MODEL_ARCHITECTURE != "cnn":
             print("\n" + "="*60)
             print(f"⚠️  FASE 2: Saltando fine-tuning (dataset pequeño: {len(train_labels)} imágenes)")
             print("="*60)
