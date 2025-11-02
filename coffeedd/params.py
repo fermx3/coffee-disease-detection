@@ -15,6 +15,7 @@ GCP_PROJECT = os.environ.get("GCP_PROJECT")
 GCP_REGION = os.environ.get("GCP_REGION")
 BUCKET_NAME = os.environ.get("BUCKET_NAME")
 MODEL_ARCHITECTURE = os.environ.get("MODEL_ARCHITECTURE", "efficientnet")
+PRODUCTION_MODEL = os.environ.get("PRODUCTION_MODEL", None)
 PRETRAINED_WEIGHTS = os.environ.get("PRETRAINED_WEIGHTS", "imagenet")
 
 ##################  CONSTANTS  #####################

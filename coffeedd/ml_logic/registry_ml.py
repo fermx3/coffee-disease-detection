@@ -1307,3 +1307,63 @@ def save_model_to_mlflow(model, params, metrics, architecture):
                         pass
 
     return None
+
+def load_specific_model(model_path: str) -> keras.Model:
+    """
+    Carga un modelo específico desde una ruta dada (para modelos en producción)
+
+    Args:
+        model_path: Ruta absoluta al archivo del modelo
+
+    Returns:
+        keras.Model: Modelo cargado o None si hay error
+    """
+    from coffeedd.ml_logic.custom_metrics import DiseaseRecallMetric
+
+    if not os.path.exists(model_path):
+        print(Fore.RED + f"❌ Archivo no encontrado: {model_path}" + Style.RESET_ALL)
+        return None
+
+    try:
+        print(Fore.BLUE + f"📁 Cargando modelo específico: {os.path.basename(model_path)}" + Style.RESET_ALL)
+
+        # Intentar cargar modelo completo primero
+        try:
+            model = keras.models.load_model(
+                model_path,
+                custom_objects={'DiseaseRecallMetric': DiseaseRecallMetric}
+            )
+
+            print(Fore.GREEN + "✅ Modelo completo cargado exitosamente" + Style.RESET_ALL)
+
+        except Exception as e:
+            print(Fore.YELLOW + f"⚠️  No se pudo cargar como modelo completo: {str(e)[:100]}" + Style.RESET_ALL)
+            print(Fore.YELLOW + "🔄 Intentando carga mediante load_model() genérico..." + Style.RESET_ALL)
+
+            # Fallback: usar la función load_model existente que ya maneja reconstrucción
+            model = load_model()
+
+            if model is None:
+                print(Fore.RED + "❌ No se pudo cargar el modelo con ningún método" + Style.RESET_ALL)
+                return None
+
+        # Recompilar con métricas completas
+        print(Fore.BLUE + "🔧 Recompilando con métricas completas..." + Style.RESET_ALL)
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=0.001),
+            loss='categorical_crossentropy',
+            metrics=[
+                'accuracy',
+                keras.metrics.Recall(name='recall'),
+                keras.metrics.Precision(name='precision'),
+                DiseaseRecallMetric(),
+                keras.metrics.AUC(name='auc')
+            ]
+        )
+
+        print(Fore.GREEN + "✅ Modelo específico cargado exitosamente" + Style.RESET_ALL)
+        return model
+
+    except Exception as e:
+        print(Fore.RED + f"❌ Error al cargar modelo específico: {e}" + Style.RESET_ALL)
+        return None
