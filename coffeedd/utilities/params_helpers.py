@@ -17,7 +17,7 @@ def get_epochs_for_sample_size(sample_size):
     Retorna el número de epochs apropiado según el tamaño de muestra.
 
     Args:
-        sample_size: Tamaño de muestra como int (número absoluto) o float (porcentaje 0-1)
+        sample_size: Tamaño de muestra como int (número absoluto), float (porcentaje 0-1), o 'full'
 
     Returns:
         int: Número de epochs recomendado
@@ -31,11 +31,17 @@ def get_epochs_for_sample_size(sample_size):
         40
         >>> get_epochs_for_sample_size(1.0)
         60
+        >>> get_epochs_for_sample_size('full')
+        15
     """
+
+    # Caso especial: dataset completo
+    if sample_size == 'full' or sample_size is None:
+        return 15  # Pocas epochs para dataset grande (59K+)
 
     # Validar tipo
     if not isinstance(sample_size, (int, float)):
-        print(f"⚠️  SAMPLE_SIZE debe ser int o float, recibido: {type(sample_size).__name__}")
+        print(f"⚠️  SAMPLE_SIZE debe ser int, float o 'full', recibido: {type(sample_size).__name__}")
         return 60
 
     # Si es float (porcentaje)

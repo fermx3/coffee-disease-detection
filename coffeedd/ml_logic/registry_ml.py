@@ -929,12 +929,35 @@ def save_results(params: dict, metrics: dict):
         params (dict): Diccionario con los parámetros del modelo.
         metrics (dict): Diccionario con las métricas del modelo.
     """
-    if MODEL_TARGET == "mlflow":
-        if params is not None:
-            mlflow.log_params(params)
-        if metrics is not None:
-            mlflow.log_metrics(metrics)
-        print(Fore.GREEN + "\n✅ Resultados guardados en MLflow." + Style.RESET_ALL)
+    # Debug: verificar estado de MLflow
+    import mlflow
+    active_run = mlflow.active_run()
+
+    print(f"\n🔍 DEBUG - save_results:")
+    print(f"   MODEL_TARGET: {MODEL_TARGET}")
+    print(f"   MLflow active run: {active_run is not None}")
+    if active_run:
+        print(f"   Run ID: {active_run.info.run_id}")
+    print(f"   Params: {len(params) if params else 0} items")
+    print(f"   Metrics: {len(metrics) if metrics else 0} items")
+
+    # Intentar loggear a MLflow si hay contexto activo o MODEL_TARGET es mlflow
+    mlflow_logged = False
+    if active_run or MODEL_TARGET == "mlflow":
+        try:
+            if params is not None:
+                mlflow.log_params(params)
+                print(f"✅ Logged {len(params)} params to MLflow")
+            if metrics is not None:
+                mlflow.log_metrics(metrics)
+                print(f"✅ Logged {len(metrics)} metrics to MLflow")
+            mlflow_logged = True
+            print(Fore.GREEN + "\n✅ Resultados guardados en MLflow." + Style.RESET_ALL)
+        except Exception as e:
+            print(Fore.YELLOW + f"⚠️  Error logging to MLflow: {e}" + Style.RESET_ALL)
+            mlflow_logged = False
+    else:
+        print(Fore.YELLOW + "⚠️  No active MLflow run and MODEL_TARGET != 'mlflow'" + Style.RESET_ALL)
 
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
@@ -950,7 +973,7 @@ def save_results(params: dict, metrics: dict):
         with open(metrics_path, "wb") as file:
                 pickle.dump(metrics, file)
 
-    print(Fore.GREEN + "\n✅ Resultados guardados localmente." + Style.RESET_ALL)
+    print(Fore.GREEN + f"\n✅ Resultados guardados localmente ({'y MLflow' if mlflow_logged else 'solamente'})." + Style.RESET_ALL)
 
 def save_model(model: keras.Model = None) -> None:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -1100,13 +1123,24 @@ def mlflow_run(func):
         - context (str, optional): Param describing the context of the run. Defaults to "Train".
     """
     def wrapper(*args, **kwargs):
-        mlflow.end_run()
+        # Debug logging
+        print(f"\n🚀 MLflow wrapper starting for {func.__name__}")
+
+        # Solo terminar run si hay uno activo y no es el que queremos
+        active_run = mlflow.active_run()
+        if active_run:
+            print(f"⚠️  Found active run {active_run.info.run_id}, ending it")
+            mlflow.end_run()
+
         mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         mlflow.set_experiment(experiment_name=MLFLOW_EXPERIMENT)
 
-        with mlflow.start_run():
+        print(f"🎯 Starting MLflow run for {func.__name__}")
+        with mlflow.start_run() as run:
+            print(f"🆔 MLflow Run ID: {run.info.run_id}")
             mlflow.tensorflow.autolog()
             results = func(*args, **kwargs)
+            print(f"✅ Function {func.__name__} completed, MLflow context still active")
 
         print("✅ mlflow_run auto-log done")
 

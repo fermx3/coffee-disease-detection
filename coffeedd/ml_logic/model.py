@@ -112,36 +112,101 @@ def build_simple_cnn_model():
 
 def build_vgg16_model():
     """
-    VGG16 mejorado para dataset de 6K imágenes con mejor estabilidad
-    Returns a Keras model.
+    VGG16 adaptativo según tamaño del dataset
+    - Dataset pequeño (<10K): Configuración conservadora
+    - Dataset grande (>=10K): Configuración más agresiva
     """
+    # Detectar tamaño aproximado del dataset
+    # Importar aquí para evitar circular imports
+    from coffeedd.utilities.params_helpers import auto_type
+
+    sample_size_typed = auto_type(SAMPLE_SIZE)
+
+    if sample_size_typed is None or sample_size_typed == 'full':
+        is_large_dataset = True  # Dataset completo (59K)
+        config_name = "DATASET GRANDE (59K+)"
+    elif isinstance(sample_size_typed, (int, float)):
+        estimated_size = sample_size_typed if isinstance(sample_size_typed, int) else int(sample_size_typed * 59807)
+        is_large_dataset = estimated_size >= 10000
+        config_name = f"DATASET {'GRANDE' if is_large_dataset else 'PEQUEÑO'} (~{estimated_size})"
+    else:
+        is_large_dataset = False
+        config_name = "DATASET PEQUEÑO"
+
+    print(f"🎯 Configuración VGG16 para {config_name}")
+
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
 
-    # Estrategia híbrida: congelar primeras capas, entrenar las últimas
-    # VGG16 tiene 19 capas, congelar las primeras 15, entrenar las últimas 4
-    for i, layer in enumerate(base_model.layers):
-        if i < 15:  # Congelar primeras 15 capas
-            layer.trainable = False
-        else:      # Entrenar últimas 4 capas
-            layer.trainable = True
+    if is_large_dataset:
+        # CONFIGURACIÓN PARA DATASET GRANDE (59K+ imágenes)
+        print("⚙️  Aplicando configuración para dataset grande...")
 
-    model = Sequential([
-        base_model,
-        layers.GlobalAveragePooling2D(),  # Mejor que Flatten para reducir overfitting
-        layers.BatchNormalization(),     # Estabilizar gradientes
+        # Transfer learning MÁS CONSERVADOR
+        # Congelar MÁS capas para evitar overfitting con tantos datos
+        for i, layer in enumerate(base_model.layers):
+            if i < 17:  # Congelar 17 capas (vs 15 para dataset pequeño)
+                layer.trainable = False
+            else:       # Solo entrenar las últimas 2 capas
+                layer.trainable = True
 
-        # Reducir complejidad del head para evitar overfitting
-        layers.Dense(256, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
-        layers.BatchNormalization(),
-        layers.Dropout(0.4),  # Dropout más agresivo
+        model = Sequential([
+            base_model,
+            layers.GlobalAveragePooling2D(),
+            layers.BatchNormalization(),
 
-        layers.Dense(128, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
-        layers.BatchNormalization(),
-        layers.Dropout(0.3),
+            # Head MÁS SIMPLE para dataset grande
+            layers.Dense(128, activation="relu",
+                        kernel_regularizer=keras.regularizers.l2(0.01)),  # L2 más fuerte
+            layers.BatchNormalization(),
+            layers.Dropout(0.6),  # Dropout MÁS agresivo
 
-        # Capa final con menor regularización
-        layers.Dense(5, activation="softmax")  # 5 clases para enfermedades del café
-    ])
+            layers.Dense(64, activation="relu",
+                        kernel_regularizer=keras.regularizers.l2(0.01)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.5),
+
+            layers.Dense(5, activation="softmax")
+        ])
+
+        print("   🔒 Capas congeladas: 17/19 (más conservador)")
+        print("   🧠 Head: 128→64→5 (más simple)")
+        print("   🛡️  L2: 0.01 (más fuerte)")
+        print("   💧 Dropout: 0.6→0.5 (más agresivo)")
+
+    else:
+        # CONFIGURACIÓN PARA DATASET PEQUEÑO (<10K imágenes)
+        print("⚙️  Aplicando configuración para dataset pequeño...")
+
+        # Estrategia híbrida original - funciona bien para 6K
+        for i, layer in enumerate(base_model.layers):
+            if i < 15:  # Congelar primeras 15 capas
+                layer.trainable = False
+            else:      # Entrenar últimas 4 capas
+                layer.trainable = True
+
+        model = Sequential([
+            base_model,
+            layers.GlobalAveragePooling2D(),
+            layers.BatchNormalization(),
+
+            # Head original para dataset pequeño
+            layers.Dense(256, activation="relu",
+                        kernel_regularizer=keras.regularizers.l2(0.001)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.4),
+
+            layers.Dense(128, activation="relu",
+                        kernel_regularizer=keras.regularizers.l2(0.001)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.3),
+
+            layers.Dense(5, activation="softmax")
+        ])
+
+        print("   🔒 Capas congeladas: 15/19 (híbrido)")
+        print("   🧠 Head: 256→128→5 (capacidad media)")
+        print("   🛡️  L2: 0.001 (suave)")
+        print("   💧 Dropout: 0.4→0.3 (moderado)")
 
     return model
 
@@ -231,11 +296,25 @@ def build_efficientnet_model():
 def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     """Compila el modelo con el optimizador, la función de pérdida y las métricas adecuadas."""
 
-    # Para VGG16: usar learning rate más conservador
+    # Para VGG16: ajustar learning rate según tamaño del dataset
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # Learning rate reducido para VGG16 transfer learning
-        learning_rate = min(learning_rate, 0.0001)  # Max 1e-4 para VGG16
-        print(f"🔧 VGG16 detectado: usando learning rate conservador {learning_rate}")
+        # Detectar si es dataset grande
+        if SAMPLE_SIZE is None or SAMPLE_SIZE == 'full':
+            is_large_dataset = True
+        elif isinstance(SAMPLE_SIZE, (int, float)):
+            estimated_size = SAMPLE_SIZE if isinstance(SAMPLE_SIZE, int) else int(SAMPLE_SIZE * 59807)
+            is_large_dataset = estimated_size >= 10000
+        else:
+            is_large_dataset = False
+
+        if is_large_dataset:
+            # Dataset grande: LR MÁS conservador para evitar overfitting
+            learning_rate = min(learning_rate, 0.00005)  # Muy conservador: 5e-5
+            print(f"🔧 VGG16 + Dataset Grande: LR ultra-conservador {learning_rate}")
+        else:
+            # Dataset pequeño: LR conservador original
+            learning_rate = min(learning_rate, 0.0001)  # Max 1e-4 para VGG16
+            print(f"🔧 VGG16 + Dataset Pequeño: LR conservador {learning_rate}")
 
     # Para EfficientNet: usar learning rate MÁS conservador para evitar colapso
     elif MODEL_ARCHITECTURE.lower() == "efficientnet":
@@ -346,33 +425,78 @@ def train_model(
 
     # Configurar callbacks específicos para cada arquitectura
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # VGG16: callbacks más conservadores para evitar oscilaciones
-        callbacks = [
-            keras.callbacks.EarlyStopping(
-                monitor='val_loss',  # Para VGG16, monitorear loss es más estable
-                patience=8,          # Menos paciencia para evitar overfitting
-                mode='min',
-                restore_best_weights=True,
-                verbose=1
-            ),
-            keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',  # Usar loss para mayor estabilidad
-                factor=0.5,          # Reducción más gradual
-                patience=3,          # Reducir LR más rápido
-                min_lr=1e-7,
-                mode='min',
-                verbose=1
-            ),
-            keras.callbacks.ModelCheckpoint(
-                checkpoint_filename,
-                monitor='val_loss',
-                mode='min',
-                save_best_only=True,
-                save_weights_only=True,
-                verbose=1
-            ),
-            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
-        ]
+        # Detectar tamaño del dataset para ajustar callbacks
+        if SAMPLE_SIZE is None or SAMPLE_SIZE == 'full':
+            is_large_dataset = True
+        elif isinstance(SAMPLE_SIZE, (int, float)):
+            estimated_size = SAMPLE_SIZE if isinstance(SAMPLE_SIZE, int) else int(SAMPLE_SIZE * 59807)
+            is_large_dataset = estimated_size >= 10000
+        else:
+            is_large_dataset = False
+
+        if is_large_dataset:
+            # VGG16 + Dataset Grande: callbacks MÁS estrictos
+            print("🔧 VGG16 + Dataset Grande: callbacks ultra-conservadores...")
+            callbacks = [
+                keras.callbacks.EarlyStopping(
+                    monitor='val_loss',
+                    patience=5,          # MÁS estricto para evitar overfitting
+                    mode='min',
+                    restore_best_weights=True,
+                    verbose=1,
+                    min_delta=0.001      # Más sensible a mejoras pequeñas
+                ),
+                keras.callbacks.ReduceLROnPlateau(
+                    monitor='val_loss',
+                    factor=0.3,          # Reducción más agresiva
+                    patience=2,          # Reducir LR más rápido
+                    min_lr=1e-8,         # LR mínimo más bajo
+                    mode='min',
+                    verbose=1
+                ),
+                keras.callbacks.ModelCheckpoint(
+                    checkpoint_filename,
+                    monitor='val_loss',
+                    mode='min',
+                    save_best_only=True,
+                    save_weights_only=True,
+                    verbose=1
+                ),
+                RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
+            ]
+            print("   ⏰ EarlyStopping: patience=5 (estricto)")
+            print("   📉 ReduceLR: factor=0.3, patience=2 (agresivo)")
+        else:
+            # VGG16 + Dataset Pequeño: callbacks originales
+            print("🔧 VGG16 + Dataset Pequeño: callbacks conservadores...")
+            callbacks = [
+                keras.callbacks.EarlyStopping(
+                    monitor='val_loss',
+                    patience=8,          # Configuración original
+                    mode='min',
+                    restore_best_weights=True,
+                    verbose=1
+                ),
+                keras.callbacks.ReduceLROnPlateau(
+                    monitor='val_loss',
+                    factor=0.5,          # Reducción más gradual
+                    patience=3,          # Original
+                    min_lr=1e-7,
+                    mode='min',
+                    verbose=1
+                ),
+                keras.callbacks.ModelCheckpoint(
+                    checkpoint_filename,
+                    monitor='val_loss',
+                    mode='min',
+                    save_best_only=True,
+                    save_weights_only=True,
+                    verbose=1
+                ),
+                RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
+            ]
+            print("   ⏰ EarlyStopping: patience=8 (tolerante)")
+            print("   📉 ReduceLR: factor=0.5, patience=3 (gradual)")
     elif MODEL_ARCHITECTURE.lower() == "efficientnet":
         # EfficientNet V2.0: callbacks BALANCEADOS (menos estrictos que V1.0)
         print("🔧 Configurando callbacks BALANCEADOS para EfficientNet V2.0...")
@@ -455,8 +579,21 @@ def train_model(
 
     # Ajustar epochs según tipo de modelo y tamaño de dataset
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # VGG16: fewer epochs para evitar overfitting en 6K imágenes
-        initial_epochs = 20
+        # Detectar tamaño del dataset para ajustar epochs
+        if SAMPLE_SIZE is None or SAMPLE_SIZE == 'full':
+            is_large_dataset = True
+        elif isinstance(SAMPLE_SIZE, (int, float)):
+            estimated_size = SAMPLE_SIZE if isinstance(SAMPLE_SIZE, int) else int(SAMPLE_SIZE * 59807)
+            is_large_dataset = estimated_size >= 10000
+        else:
+            is_large_dataset = False
+
+        if is_large_dataset:
+            initial_epochs = 15  # Menos epochs para dataset grande (evitar overfitting)
+            print(f"🔧 VGG16 + Dataset Grande: {initial_epochs} epochs (conservador)")
+        else:
+            initial_epochs = 20  # Original para dataset pequeño
+            print(f"🔧 VGG16 + Dataset Pequeño: {initial_epochs} epochs")
     elif MODEL_ARCHITECTURE.lower() == "cnn":
         initial_epochs = 30
     else:
