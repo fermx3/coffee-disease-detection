@@ -116,7 +116,7 @@ def build_vgg16_model():
     Returns a Keras model.
     """
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-    
+
     # Estrategia híbrida: congelar primeras capas, entrenar las últimas
     # VGG16 tiene 19 capas, congelar las primeras 15, entrenar las últimas 4
     for i, layer in enumerate(base_model.layers):
@@ -129,16 +129,16 @@ def build_vgg16_model():
         base_model,
         layers.GlobalAveragePooling2D(),  # Mejor que Flatten para reducir overfitting
         layers.BatchNormalization(),     # Estabilizar gradientes
-        
+
         # Reducir complejidad del head para evitar overfitting
         layers.Dense(256, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
         layers.BatchNormalization(),
         layers.Dropout(0.4),  # Dropout más agresivo
-        
+
         layers.Dense(128, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
         layers.BatchNormalization(),
         layers.Dropout(0.3),
-        
+
         # Capa final con menor regularización
         layers.Dense(5, activation="softmax")  # 5 clases para enfermedades del café
     ])
@@ -146,7 +146,20 @@ def build_vgg16_model():
     return model
 
 def build_efficientnet_model():
-    """Modelo EfficientNet para datasets grandes (>= 5000 imágenes)"""
+    """
+    Modelo EfficientNet BALANCEADO - Optimizado para performance sin sacrificar estabilidad.
+
+    VERSIÓN 2.0 - AJUSTES BALANCEADOS:
+    - Regularización L2 más suave (0.005/0.003 vs 0.01/0.005)
+    - Dropout menos agresivo (0.2 → 0.3 → 0.4 vs 0.3 → 0.4 → 0.5)
+    - Capas dense más grandes (768 → 384 → 192 vs 512 → 256 → 128)
+    - BatchNormalization momentum estándar (0.99 vs 0.9)
+    - Mejor balance estabilidad/performance
+    """
+    print("🔧 Construyendo EfficientNet BALANCEADO (V2.0)...")
+
+    from keras.regularizers import l2
+
     # Base model pre-entrenado
     base_model = EfficientNetB0(
         include_top=False,
@@ -157,50 +170,86 @@ def build_efficientnet_model():
     # Congelar base inicialmente
     base_model.trainable = False
 
-    # Modelo completo SIN augmentation (se hace en el dataset)
     inputs = keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
 
-    # Base model directamente
+    # Base model
     x = base_model(inputs, training=False)
 
-    # Classification head
-    x = layers.GlobalAveragePooling2D(name="avg_pool")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.2)(x)
+    # Global Average Pooling
+    x = layers.GlobalAveragePooling2D(name="global_avg_pool")(x)
 
-    x = layers.Dense(1024, activation='relu', name="dense_1")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.3)(x)
+    # BatchNorm con momentum estándar (menos conservador)
+    x = layers.BatchNormalization(momentum=0.99, name="bn_1")(x)
 
-    x = layers.Dense(512, activation='relu', name="dense_2")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.2)(x)
+    # Primera capa dense - AUMENTADA de 512 a 768
+    x = layers.Dropout(0.2, name="dropout_1")(x)  # Dropout REDUCIDO de 0.3 a 0.2
+    x = layers.Dense(
+        768,  # AUMENTADO de 512 a 768
+        activation='relu',
+        kernel_regularizer=l2(0.005),  # L2 REDUCIDO de 0.01 a 0.005
+        name="dense_1"
+    )(x)
 
-    x = layers.Dense(256, activation='relu', name="dense_3")(x)
-    x = layers.Dropout(0.1)(x)
+    x = layers.BatchNormalization(momentum=0.99, name="bn_2")(x)
 
+    # Segunda capa dense - AUMENTADA de 256 a 384
+    x = layers.Dropout(0.3, name="dropout_2")(x)  # Dropout REDUCIDO de 0.4 a 0.3
+    x = layers.Dense(
+        384,  # AUMENTADO de 256 a 384
+        activation='relu',
+        kernel_regularizer=l2(0.005),  # L2 igual
+        name="dense_2"
+    )(x)
+
+    x = layers.BatchNormalization(momentum=0.99, name="bn_3")(x)
+
+    # Tercera capa dense - AUMENTADA de 128 a 192
+    x = layers.Dropout(0.4, name="dropout_3")(x)  # Dropout REDUCIDO de 0.5 a 0.4
+    x = layers.Dense(
+        192,  # AUMENTADO de 128 a 192
+        activation='relu',
+        kernel_regularizer=l2(0.003),  # L2 MÁS SUAVE de 0.005 a 0.003
+        name="dense_3"
+    )(x)
+
+    # Dropout final REDUCIDO
+    x = layers.Dropout(0.2, name="dropout_final")(x)  # REDUCIDO de 0.3 a 0.2
+
+    # Capa de clasificación
     outputs = layers.Dense(NUM_CLASSES, activation='softmax', name="predictions")(x)
 
-    model = keras.Model(inputs, outputs)
+    model = keras.Model(inputs, outputs, name="balanced_efficientnet")
+
+    print(f"✅ EfficientNet balanceado V2.0 construido:")
+    print(f"   📊 Parámetros totales: ~{model.count_params():,}")
+    print(f"   🔒 Regularización L2 suave: 0.005 → 0.005 → 0.003")
+    print(f"   💧 Dropout moderado: 0.2 → 0.3 → 0.4 → 0.2")
+    print(f"   🧠 Capas dense ampliadas: 768 → 384 → 192")
 
     return model, base_model
 
 def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     """Compila el modelo con el optimizador, la función de pérdida y las métricas adecuadas."""
-    
+
     # Para VGG16: usar learning rate más conservador
     if MODEL_ARCHITECTURE.lower() == "vgg16":
         # Learning rate reducido para VGG16 transfer learning
         learning_rate = min(learning_rate, 0.0001)  # Max 1e-4 para VGG16
         print(f"🔧 VGG16 detectado: usando learning rate conservador {learning_rate}")
-    
+
+    # Para EfficientNet: usar learning rate MÁS conservador para evitar colapso
+    elif MODEL_ARCHITECTURE.lower() == "efficientnet":
+        learning_rate = min(learning_rate, 0.0008)  # AUMENTADO de 0.0005 a 0.0008 (menos conservador)
+        print(f"🔧 EfficientNet detectado: usando learning rate balanceado {learning_rate}")
+
     model.compile(
         optimizer=keras.optimizers.Adam(
             learning_rate=learning_rate,
             beta_1=0.9,      # Momentum más conservador
-            beta_2=0.999,    
-            epsilon=1e-07,   # Estabilidad numérica
-            clipnorm=1.0     # Gradient clipping para evitar explosión
+            beta_2=0.999,
+            epsilon=1e-07,   # Estabilidad numérica mejorada
+            clipnorm=0.7 if MODEL_ARCHITECTURE.lower() == "efficientnet" else 1.0,  # Gradient clipping menos estricto (0.7 vs 0.5)
+            clipvalue=0.7 if MODEL_ARCHITECTURE.lower() == "efficientnet" else None  # Clip por valor menos estricto
         ),
         loss='categorical_crossentropy',
         metrics=[
@@ -213,6 +262,8 @@ def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     )
 
     print("✅ Modelo compilado")
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        print("🔧 EfficientNet V2.0: Gradient clipping balanceado (clipnorm=0.7, clipvalue=0.7)")
     print("\n📋 Resumen del modelo:")
     model.summary()
     return model
@@ -322,8 +373,49 @@ def train_model(
             ),
             RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
         ]
+    elif MODEL_ARCHITECTURE.lower() == "efficientnet":
+        # EfficientNet V2.0: callbacks BALANCEADOS (menos estrictos que V1.0)
+        print("🔧 Configurando callbacks BALANCEADOS para EfficientNet V2.0...")
+        callbacks = [
+            keras.callbacks.EarlyStopping(
+                monitor='val_loss',
+                patience=8,          # AUMENTADO de 6 a 8 (más paciencia)
+                mode='min',
+                restore_best_weights=True,
+                verbose=1,
+                min_delta=0.002      # Menos sensible (0.002 vs 0.001)
+            ),
+            keras.callbacks.ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.5,          # Menos agresivo (0.5 vs 0.4)
+                patience=4,          # Más paciencia (4 vs 3)
+                min_lr=1e-7,
+                mode='min',
+                verbose=1,
+                min_delta=0.0005     # Menos sensible (0.0005 vs 0.0001)
+            ),
+            keras.callbacks.ModelCheckpoint(
+                checkpoint_filename,
+                monitor='val_loss',
+                mode='min',
+                save_best_only=True,
+                save_weights_only=True,
+                verbose=1
+            ),
+            # Learning Rate Logger para debugging
+            keras.callbacks.CSVLogger(
+                checkpoint_filename.replace('.keras', '_training_log.csv'),
+                append=False
+            ),
+            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
+        ]
+        print("✅ Callbacks EfficientNet V2.0 configurados:")
+        print("   � EarlyStopping: patience=8 (más tolerante)")
+        print("   📉 ReduceLR: factor=0.5, patience=4 (menos agresivo)")
+        print("   💾 ModelCheckpoint: monitor=val_loss")
+        print("   � CSV Logger para análisis")
     else:
-        # Callbacks originales para CNN y EfficientNet
+        # Callbacks originales para CNN
         callbacks = [
             keras.callbacks.EarlyStopping(
                 monitor='val_recall',  # Mantener recall como monitor principal
@@ -382,14 +474,69 @@ def train_model(
     print("✅ Fase 1 de entrenamiento completada")
     print(f"📈 Recall máximo en validación durante fase 1: {max(history_phase1.history['val_recall']):.4f}")
 
-    # Para VGG16 con 6K imágenes: NO hacer fine-tuning para evitar overfitting
-    should_finetune = (
-        MODEL_ARCHITECTURE.lower() == "efficientnet" and  # Solo EfficientNet
-        len(train_labels) >= 10000 and  # Dataset grande
-        len(history_phase1.history['val_accuracy']) > 0 and
-        max(history_phase1.history['val_accuracy']) > 0.60 and  # Umbral mínimo de accuracy
-        fine_tune
-    )
+    # Análisis de estabilidad para EfficientNet
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        val_loss_history = history_phase1.history['val_loss']
+        val_acc_history = history_phase1.history['val_accuracy']
+
+        best_val_loss = min(val_loss_history)
+        best_val_acc = max(val_acc_history)
+        final_val_loss = val_loss_history[-1]
+
+        # Verificar tendencia de loss (últimas 3 epochs)
+        recent_losses = val_loss_history[-3:]
+        loss_increasing = len(recent_losses) >= 2 and recent_losses[-1] > recent_losses[-2]
+        loss_stable = best_val_loss < 0.2  # Loss debe ser muy bajo
+        acc_good = best_val_acc > 0.85     # Accuracy debe ser alta
+
+        print(f"\n📊 Análisis de estabilidad EfficientNet:")
+        print(f"   Mejor val_loss: {best_val_loss:.4f}")
+        print(f"   Mejor val_acc: {best_val_acc:.4f}")
+        print(f"   Val_loss final: {final_val_loss:.4f}")
+        print(f"   Loss estable: {loss_stable}")
+        print(f"   Accuracy buena: {acc_good}")
+        print(f"   Loss aumentando: {loss_increasing}")
+
+    # Condiciones MUY ESTRICTAS para fine-tuning
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        should_finetune = (
+            len(train_labels) >= 8000 and            # REDUCIDO de 10000 a 8000
+            best_val_loss < 0.25 and                 # RELAJADO de 0.15 a 0.25
+            best_val_acc > 0.85 and                  # RELAJADO de 0.90 a 0.85
+            not loss_increasing and                  # Loss NO debe estar aumentando
+            final_val_loss < best_val_loss * 1.3 and # RELAJADO de 1.2 a 1.3
+            fine_tune                                 # Flag habilitado
+        )
+
+        if not should_finetune:
+            print("\n🚨 FINE-TUNING SALTADO para EfficientNet V2.0:")
+            if len(train_labels) < 8000:
+                print(f"   ❌ Dataset pequeño: {len(train_labels)} < 8,000")
+            if best_val_loss >= 0.25:
+                print(f"   ❌ Val_loss alto: {best_val_loss:.4f} >= 0.25")
+            if best_val_acc <= 0.85:
+                print(f"   ❌ Val_accuracy bajo: {best_val_acc:.4f} <= 0.85")
+            if loss_increasing:
+                print("   ❌ Loss está aumentando (inestable)")
+            if final_val_loss >= best_val_loss * 1.3:
+                print(f"   ❌ Loss final deteriorado: {final_val_loss:.4f} vs {best_val_loss:.4f}")
+            print("   ✅ Manteniendo modelo Fase 1 para evitar colapso")
+        else:
+            print("\n🎯 CONDICIONES CUMPLIDAS para fine-tuning EfficientNet V2.0:")
+            print(f"   ✅ Dataset: {len(train_labels)} >= 8,000")
+            print(f"   ✅ Val_loss: {best_val_loss:.4f} < 0.25")
+            print(f"   ✅ Val_accuracy: {best_val_acc:.4f} > 0.85")
+            print(f"   ✅ Loss estable: {not loss_increasing}")
+            print(f"   ✅ Loss final OK: {final_val_loss:.4f} < {best_val_loss * 1.3:.4f}")
+    else:
+        # Condiciones originales para otros modelos
+        should_finetune = (
+            MODEL_ARCHITECTURE.lower() == "efficientnet" and  # Solo EfficientNet
+            len(train_labels) >= 10000 and  # Dataset grande
+            len(history_phase1.history['val_accuracy']) > 0 and
+            max(history_phase1.history['val_accuracy']) > 0.60 and  # Umbral mínimo de accuracy
+            fine_tune
+        )
 
     if should_finetune:
         model, history_phase2 = fine_tune_model(
@@ -446,33 +593,98 @@ def fine_tune_model(
         Tuple[Model, dict]: Modelo entrenado y el historial de entrenamiento.
     """
     print("\n" + "="*60)
-    print("🔥 FASE 2: Fine-tuning (descongelando últimas 15 capas)")
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        print("🔥 FASE 2: Fine-tuning BALANCEADO (EfficientNet V2.0)")
+        print("🎯 8 capas finales para mejor performance manteniendo estabilidad")
+    else:
+        print("🔥 FASE 2: Fine-tuning (descongelando últimas 15 capas)")
     print("="*60)
     print(f"ℹ️  Mejor val_accuracy en Fase 1: {max(history_phase1.history['val_accuracy']):.3f}")
+
+    # Verificar estabilidad antes de fine-tuning para EfficientNet
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        val_loss_history = history_phase1.history['val_loss']
+        best_val_loss = min(val_loss_history)
+        recent_val_loss = val_loss_history[-3:]  # Últimas 3 epochs
+
+        print(f"📊 Análisis de estabilidad V2.0:")
+        print(f"   Mejor val_loss: {best_val_loss:.4f}")
+        print(f"   Val_loss reciente: {recent_val_loss}")
+
+        # Condiciones más permisivas para fine-tuning
+        if best_val_loss > 0.4 or any(loss > best_val_loss * 1.8 for loss in recent_val_loss):
+            print("⚠️  Modelo muestra inestabilidad - usando fine-tuning conservador")
+            conservative_mode = True
+        else:
+            print("✅ Modelo estable - usando fine-tuning balanceado")
+            conservative_mode = False
+    else:
+        conservative_mode = False
 
     # Descongelar base model
     base_model.trainable = True
 
-    # Congelar MÁS capas (solo descongelar las últimas 15 en lugar de 30)
-    fine_tune_at = len(base_model.layers) - 15  # Cambio de 30 a 15
+    # Fine-tuning BALANCEADO para EfficientNet V2.0
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        if conservative_mode:
+            fine_tune_at = len(base_model.layers) - 5  # Solo 5 capas si hay inestabilidad
+            lr_divisor = 15  # Learning rate 15x más bajo
+            print("🚨 Modo conservador: solo 5 capas finales")
+        else:
+            fine_tune_at = len(base_model.layers) - 8  # 8 capas (vs 5 anterior)
+            lr_divisor = 10  # Learning rate 10x más bajo (vs 15-20)
+            print("🔧 Modo balanceado: 8 capas finales")
+    else:
+        fine_tune_at = len(base_model.layers) - 15  # Valor original para otros modelos
+        lr_divisor = 10
+
     for layer in base_model.layers[:fine_tune_at]:
         layer.trainable = False
 
-    print(f"Capas entrenables: {sum([1 for l in model.layers if l.trainable])}")
-    print(f"Capas totales: {len(model.layers)}")
+    trainable_layers = sum([1 for l in model.layers if l.trainable])
+    frozen_layers = len(model.layers) - trainable_layers
 
-    # Recompilar con learning rate MUY bajo (10x más bajo que antes)
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=LEARNING_RATE / 10),
-        loss='categorical_crossentropy',
-        metrics=[
-            'accuracy',
-            keras.metrics.Recall(name='recall'),  # Recall general
-            keras.metrics.Precision(name='precision'),
-            DiseaseRecallMetric(),  # Recall específico de enfermedades
-            keras.metrics.AUC(name='auc')
-        ]
-    )
+    print(f"🔒 Capas congeladas: {frozen_layers}")
+    print(f"🔥 Capas entrenables: {trainable_layers}")
+    print(f"📊 Total capas: {len(model.layers)}")
+
+    # Learning rate específico para cada arquitectura
+    new_lr = LEARNING_RATE / lr_divisor
+    print(f"📉 Learning rate reducido: {LEARNING_RATE} → {new_lr} (÷{lr_divisor})")
+
+    # Recompilar con configuraciones optimizadas por arquitectura
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        model.compile(
+            optimizer=keras.optimizers.Adam(
+                learning_rate=new_lr,
+                beta_1=0.9,
+                beta_2=0.999,
+                epsilon=1e-08,
+                clipnorm=0.5,    # Gradient clipping balanceado (0.5 vs 0.3)
+                clipvalue=0.5    # También clip por valor balanceado
+            ),
+            loss='categorical_crossentropy',
+            metrics=[
+                'accuracy',
+                keras.metrics.Recall(name='recall'),
+                keras.metrics.Precision(name='precision'),
+                DiseaseRecallMetric(),
+                keras.metrics.AUC(name='auc')
+            ]
+        )
+        print("🔧 EfficientNet V2.0: Gradient clipping balanceado (0.5) para fine-tuning")
+    else:
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=new_lr),
+            loss='categorical_crossentropy',
+            metrics=[
+                'accuracy',
+                keras.metrics.Recall(name='recall'),  # Recall general
+                keras.metrics.Precision(name='precision'),
+                DiseaseRecallMetric(),  # Recall específico de enfermedades
+                keras.metrics.AUC(name='auc')
+            ]
+        )
 
 
     history_phase2 = model.fit(
