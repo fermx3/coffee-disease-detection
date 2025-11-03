@@ -94,13 +94,47 @@ def detect_model_architecture(model_path_or_layers):
     else:
         # Detectar desde capas del modelo
         layers = model_path_or_layers
-        for layer in layers:
-            layer_name = layer.name.lower()
+        layer_names = [layer.name.lower() for layer in layers]
+
+        # Detectar EfficientNet
+        for layer_name in layer_names:
             if 'efficientnet' in layer_name:
                 return 'efficientnet'
-            elif 'vgg16' in layer_name:
-                return 'vgg16'
-        return 'cnn'  # Default para CNN simple
+
+        # Detectar VGG16 - método 1: capa funcional llamada "vgg16"
+        if 'vgg16' in layer_names:
+            return 'vgg16'
+
+        # Detectar VGG16 - método 2: patrones característicos de capas individuales
+        vgg16_patterns = [
+            'block1_conv1', 'block1_conv2', 'block1_pool',
+            'block2_conv1', 'block2_conv2', 'block2_pool',
+            'block3_conv1', 'block3_conv2', 'block3_conv3', 'block3_pool',
+            'block4_conv1', 'block4_conv2', 'block4_conv3', 'block4_pool',
+            'block5_conv1', 'block5_conv2', 'block5_conv3', 'block5_pool'
+        ]
+
+        # Si encuentra al menos 5 patrones VGG16, es VGG16
+        vgg16_matches = sum(1 for pattern in vgg16_patterns if any(pattern in name for name in layer_names))
+        if vgg16_matches >= 5:
+            return 'vgg16'
+
+        # Detectar VGG16 - método 3: presencia de GlobalAveragePooling2D + estructura típica VGG16
+        has_global_avg_pool = any('global_average_pooling2d' in name for name in layer_names)
+        has_batch_norm = any('batch_normalization' in name for name in layer_names)
+        has_multiple_dense = len([name for name in layer_names if 'dense' in name]) >= 2
+
+        # Si tiene GlobalAveragePooling2D + BatchNorm + múltiples Dense = probablemente VGG16 optimizado
+        if has_global_avg_pool and has_batch_norm and has_multiple_dense:
+            return 'vgg16'
+
+        # Detectar CNN simple por ausencia de transfer learning y pocas capas
+        # CNN simple típicamente tiene <10 capas
+        if len(layers) < 10:
+            return 'cnn'
+
+        # Si tiene muchas capas pero no es VGG16 ni EfficientNet, probablemente sea CNN complejo
+        return 'cnn'
 
 def build_model_by_architecture(architecture):
     """Construye el modelo según la arquitectura especificada"""
@@ -767,7 +801,17 @@ def load_model(stage="Production", compile_with_metrics=True) -> keras.Model:
                     )
 
                 print(Fore.GREEN + "✅ Modelo cargado exitosamente desde GCS" + Style.RESET_ALL)
-                print(f"🏷️  Tipo: {'EfficientNetB0' if useefficientnet else 'CNN simple'}")
+
+                # Detectar arquitectura correctamente
+                final_architecture = detect_model_architecture(model.layers)
+                arch_display_names = {
+                    'efficientnet': 'EfficientNetB0',
+                    'vgg16': 'VGG16',
+                    'cnn': 'CNN simple'
+                }
+                display_name = arch_display_names.get(final_architecture, final_architecture)
+                print(f"🏷️  Tipo: {display_name}")
+
                 print(f"📁 Archivo local: {latest_model_path_to_save}")
 
                 return model
@@ -904,7 +948,17 @@ def load_model(stage="Production", compile_with_metrics=True) -> keras.Model:
                 )
 
             print(Fore.GREEN + "✅ Modelo cargado exitosamente desde MLflow" + Style.RESET_ALL)
-            print(f"🏷️  Tipo: {'EfficientNetB0' if useefficientnet else 'CNN simple'}")
+
+            # Detectar arquitectura correctamente
+            final_architecture = detect_model_architecture(model.layers)
+            arch_display_names = {
+                'efficientnet': 'EfficientNetB0',
+                'vgg16': 'VGG16',
+                'cnn': 'CNN simple'
+            }
+            display_name = arch_display_names.get(final_architecture, final_architecture)
+            print(f"🏷️  Tipo: {display_name}")
+
             print(f"📊 Run ID: {run_id}")
 
             return model
