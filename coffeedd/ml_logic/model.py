@@ -115,6 +115,25 @@ def build_vgg16_model():
     VGG16 mejorado para dataset de 6K imágenes con mejor estabilidad
     Returns a Keras model.
     """
+    # Detectar tamaño aproximado del dataset
+    # Importar aquí para evitar circular imports
+    from coffeedd.utilities.params_helpers import auto_type
+
+    sample_size_typed = auto_type(SAMPLE_SIZE)
+
+    if sample_size_typed is None or sample_size_typed == 'full':
+        is_large_dataset = True  # Dataset completo (59K)
+        config_name = "DATASET GRANDE (59K+)"
+    elif isinstance(sample_size_typed, (int, float)):
+        estimated_size = sample_size_typed if isinstance(sample_size_typed, int) else int(sample_size_typed * 59807)
+        is_large_dataset = estimated_size >= 10000
+        config_name = f"DATASET {'GRANDE' if is_large_dataset else 'PEQUEÑO'} (~{estimated_size})"
+    else:
+        is_large_dataset = False
+        config_name = "DATASET PEQUEÑO"
+
+    print(f"🎯 Configuración VGG16 para {config_name}")
+
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
     
     # Estrategia híbrida: congelar primeras capas, entrenar las últimas
@@ -146,7 +165,20 @@ def build_vgg16_model():
     return model
 
 def build_efficientnet_model():
-    """Modelo EfficientNet para datasets grandes (>= 5000 imágenes)"""
+    """
+    Modelo EfficientNet BALANCEADO - Optimizado para performance sin sacrificar estabilidad.
+
+    VERSIÓN 2.0 - AJUSTES BALANCEADOS:
+    - Regularización L2 más suave (0.005/0.003 vs 0.01/0.005)
+    - Dropout menos agresivo (0.2 → 0.3 → 0.4 vs 0.3 → 0.4 → 0.5)
+    - Capas dense más grandes (768 → 384 → 192 vs 512 → 256 → 128)
+    - BatchNormalization momentum estándar (0.99 vs 0.9)
+    - Mejor balance estabilidad/performance
+    """
+    print("🔧 Construyendo EfficientNet BALANCEADO (V2.0)...")
+
+    from keras.regularizers import l2
+
     # Base model pre-entrenado
     base_model = EfficientNetB0(
         include_top=False,
@@ -157,31 +189,61 @@ def build_efficientnet_model():
     # Congelar base inicialmente
     base_model.trainable = False
 
-    # Modelo completo SIN augmentation (se hace en el dataset)
     inputs = keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
 
-    # Base model directamente
+    # Base model
     x = base_model(inputs, training=False)
 
-    # Classification head
-    x = layers.GlobalAveragePooling2D(name="avg_pool")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.2)(x)
+    # Global Average Pooling
+    x = layers.GlobalAveragePooling2D(name="global_avg_pool")(x)
 
-    x = layers.Dense(1024, activation='relu', name="dense_1")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.3)(x)
+    # BatchNorm con momentum estándar (menos conservador)
+    x = layers.BatchNormalization(momentum=0.99, name="bn_1")(x)
 
-    x = layers.Dense(512, activation='relu', name="dense_2")(x)
-    x = layers.BatchNormalization()(x)
-    x = layers.Dropout(0.2)(x)
+    # Primera capa dense - AUMENTADA de 512 a 768
+    x = layers.Dropout(0.2, name="dropout_1")(x)  # Dropout REDUCIDO de 0.3 a 0.2
+    x = layers.Dense(
+        768,  # AUMENTADO de 512 a 768
+        activation='relu',
+        kernel_regularizer=l2(0.005),  # L2 REDUCIDO de 0.01 a 0.005
+        name="dense_1"
+    )(x)
 
-    x = layers.Dense(256, activation='relu', name="dense_3")(x)
-    x = layers.Dropout(0.1)(x)
+    x = layers.BatchNormalization(momentum=0.99, name="bn_2")(x)
 
+    # Segunda capa dense - AUMENTADA de 256 a 384
+    x = layers.Dropout(0.3, name="dropout_2")(x)  # Dropout REDUCIDO de 0.4 a 0.3
+    x = layers.Dense(
+        384,  # AUMENTADO de 256 a 384
+        activation='relu',
+        kernel_regularizer=l2(0.005),  # L2 igual
+        name="dense_2"
+    )(x)
+
+    x = layers.BatchNormalization(momentum=0.99, name="bn_3")(x)
+
+    # Tercera capa dense - AUMENTADA de 128 a 192
+    x = layers.Dropout(0.4, name="dropout_3")(x)  # Dropout REDUCIDO de 0.5 a 0.4
+    x = layers.Dense(
+        192,  # AUMENTADO de 128 a 192
+        activation='relu',
+        kernel_regularizer=l2(0.003),  # L2 MÁS SUAVE de 0.005 a 0.003
+        name="dense_3"
+    )(x)
+
+    # Dropout final REDUCIDO
+    x = layers.Dropout(0.2, name="dropout_final")(x)  # REDUCIDO de 0.3 a 0.2
+
+    # Capa de clasificación
     outputs = layers.Dense(NUM_CLASSES, activation='softmax', name="predictions")(x)
 
-    model = keras.Model(inputs, outputs)
+    model = keras.Model(inputs, outputs, name="balanced_efficientnet")
+
+    print(f"✅ EfficientNet balanceado V2.0 construido:")
+    print(f"   📊 Parámetros totales: ~{model.count_params():,}")
+    print(f"   🔒 Regularización L2 suave: 0.005 → 0.005 → 0.003")
+    print(f"   💧 Dropout moderado: 0.2 → 0.3 → 0.4 → 0.2")
+    print(f"   🧠 Capas dense ampliadas: 768 → 384 → 192")
 
     return model, base_model
 
@@ -213,6 +275,8 @@ def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     )
 
     print("✅ Modelo compilado")
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        print("🔧 EfficientNet V2.0: Gradient clipping balanceado (clipnorm=0.7, clipvalue=0.7)")
     print("\n📋 Resumen del modelo:")
     model.summary()
     return model
@@ -446,33 +510,98 @@ def fine_tune_model(
         Tuple[Model, dict]: Modelo entrenado y el historial de entrenamiento.
     """
     print("\n" + "="*60)
-    print("🔥 FASE 2: Fine-tuning (descongelando últimas 15 capas)")
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        print("🔥 FASE 2: Fine-tuning BALANCEADO (EfficientNet V2.0)")
+        print("🎯 8 capas finales para mejor performance manteniendo estabilidad")
+    else:
+        print("🔥 FASE 2: Fine-tuning (descongelando últimas 15 capas)")
     print("="*60)
     print(f"ℹ️  Mejor val_accuracy en Fase 1: {max(history_phase1.history['val_accuracy']):.3f}")
+
+    # Verificar estabilidad antes de fine-tuning para EfficientNet
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        val_loss_history = history_phase1.history['val_loss']
+        best_val_loss = min(val_loss_history)
+        recent_val_loss = val_loss_history[-3:]  # Últimas 3 epochs
+
+        print(f"📊 Análisis de estabilidad V2.0:")
+        print(f"   Mejor val_loss: {best_val_loss:.4f}")
+        print(f"   Val_loss reciente: {recent_val_loss}")
+
+        # Condiciones más permisivas para fine-tuning
+        if best_val_loss > 0.4 or any(loss > best_val_loss * 1.8 for loss in recent_val_loss):
+            print("⚠️  Modelo muestra inestabilidad - usando fine-tuning conservador")
+            conservative_mode = True
+        else:
+            print("✅ Modelo estable - usando fine-tuning balanceado")
+            conservative_mode = False
+    else:
+        conservative_mode = False
 
     # Descongelar base model
     base_model.trainable = True
 
-    # Congelar MÁS capas (solo descongelar las últimas 15 en lugar de 30)
-    fine_tune_at = len(base_model.layers) - 15  # Cambio de 30 a 15
+    # Fine-tuning BALANCEADO para EfficientNet V2.0
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        if conservative_mode:
+            fine_tune_at = len(base_model.layers) - 5  # Solo 5 capas si hay inestabilidad
+            lr_divisor = 15  # Learning rate 15x más bajo
+            print("🚨 Modo conservador: solo 5 capas finales")
+        else:
+            fine_tune_at = len(base_model.layers) - 8  # 8 capas (vs 5 anterior)
+            lr_divisor = 10  # Learning rate 10x más bajo (vs 15-20)
+            print("🔧 Modo balanceado: 8 capas finales")
+    else:
+        fine_tune_at = len(base_model.layers) - 15  # Valor original para otros modelos
+        lr_divisor = 10
+
     for layer in base_model.layers[:fine_tune_at]:
         layer.trainable = False
 
-    print(f"Capas entrenables: {sum([1 for l in model.layers if l.trainable])}")
-    print(f"Capas totales: {len(model.layers)}")
+    trainable_layers = sum([1 for l in model.layers if l.trainable])
+    frozen_layers = len(model.layers) - trainable_layers
 
-    # Recompilar con learning rate MUY bajo (10x más bajo que antes)
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=LEARNING_RATE / 10),
-        loss='categorical_crossentropy',
-        metrics=[
-            'accuracy',
-            keras.metrics.Recall(name='recall'),  # Recall general
-            keras.metrics.Precision(name='precision'),
-            DiseaseRecallMetric(),  # Recall específico de enfermedades
-            keras.metrics.AUC(name='auc')
-        ]
-    )
+    print(f"🔒 Capas congeladas: {frozen_layers}")
+    print(f"🔥 Capas entrenables: {trainable_layers}")
+    print(f"📊 Total capas: {len(model.layers)}")
+
+    # Learning rate específico para cada arquitectura
+    new_lr = LEARNING_RATE / lr_divisor
+    print(f"📉 Learning rate reducido: {LEARNING_RATE} → {new_lr} (÷{lr_divisor})")
+
+    # Recompilar con configuraciones optimizadas por arquitectura
+    if MODEL_ARCHITECTURE.lower() == "efficientnet":
+        model.compile(
+            optimizer=keras.optimizers.Adam(
+                learning_rate=new_lr,
+                beta_1=0.9,
+                beta_2=0.999,
+                epsilon=1e-08,
+                clipnorm=0.5,    # Gradient clipping balanceado (0.5 vs 0.3)
+                clipvalue=0.5    # También clip por valor balanceado
+            ),
+            loss='categorical_crossentropy',
+            metrics=[
+                'accuracy',
+                keras.metrics.Recall(name='recall'),
+                keras.metrics.Precision(name='precision'),
+                DiseaseRecallMetric(),
+                keras.metrics.AUC(name='auc')
+            ]
+        )
+        print("🔧 EfficientNet V2.0: Gradient clipping balanceado (0.5) para fine-tuning")
+    else:
+        model.compile(
+            optimizer=keras.optimizers.Adam(learning_rate=new_lr),
+            loss='categorical_crossentropy',
+            metrics=[
+                'accuracy',
+                keras.metrics.Recall(name='recall'),  # Recall general
+                keras.metrics.Precision(name='precision'),
+                DiseaseRecallMetric(),  # Recall específico de enfermedades
+                keras.metrics.AUC(name='auc')
+            ]
+        )
 
 
     history_phase2 = model.fit(
