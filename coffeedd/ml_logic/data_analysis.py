@@ -466,7 +466,7 @@ def plot_training_metrics_combined(combined_history, model_name, sample_name,
     os.makedirs(MODELS_PATH, exist_ok=True)
 
     # Nombre descriptivo para las métricas
-    metrics_filename = f'{MODELS_PATH}/training_metrics_{model_name}_{sample_name}.png'
+    metrics_filename = f'{MODELS_PATH}/training_metrics_{model_name}.png'
 
     # Crear figura con subplots
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))

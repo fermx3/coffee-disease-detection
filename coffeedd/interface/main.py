@@ -245,7 +245,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
         os.makedirs(MODELS_PATH, exist_ok=True)
 
         # Nombre descriptivo para la matriz de confusión
-        confusion_matrix_filename = f'{MODELS_PATH}/confusion_matrix_{model_name}_{sample_name}.png'
+        confusion_matrix_filename = f'{MODELS_PATH}/confusion_matrix_{model_name}.png'
 
         # Crear la matriz de confusión
         plt.figure(figsize=(12, 10))
