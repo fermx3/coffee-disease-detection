@@ -26,8 +26,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from coffeedd.interface.main import pred
 from coffeedd.params import SUPPORTED_FORMATS
 
-import base64
-
 app = FastAPI(
     title="Coffee Disease Detection API",
     description="API for detecting diseases in coffee plants using computer vision"
@@ -104,8 +102,8 @@ async def predict(
 def health_check():
     """Check if the model is loaded and ready"""
     try:
-        from coffeedd.interface.main import load_model
-        model, _ = load_model()
+        from coffeedd.interface.main import get_cached_model
+        model = get_cached_model()
         return {
             "status": "healthy",
             "model_loaded": model is not None

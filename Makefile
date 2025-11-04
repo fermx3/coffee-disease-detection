@@ -23,6 +23,9 @@ run_split_resized_dataset:
 run_train:
 	python -c 'from coffeedd.interface.main import train; train()'
 
+run_test_train:
+	python -c 'from coffeedd.interface.main import train; train(test_mode=True)'
+
 run_pred:
 	python -c 'from coffeedd.interface.main import pred; pred()'
 
@@ -31,6 +34,9 @@ run_evaluate:
 
 run_api:
 	uvicorn coffeedd.api.fast:app --reload
+
+upload_model:
+	python -c "from coffeedd.interface.main import upload_model_to_gcs; upload_model_to_gcs()"
 
 #################### DEFAULT ACTIONS ###################
 default: pylint pytest
@@ -53,6 +59,13 @@ pylint:
 
 pytest:
 	PYTHONDONTWRITEBYTECODE=1 pytest -v --color=yes
+
+#################  GCS UPLOAD TESTS  #####################
+test_gcs:
+	python -m pytest tests/test_gcs_upload.py -v -s
+
+test_gcs_real:
+	python tests/test_gcs_upload.py
 
 test_gcp_setup:
 	@pytest \
@@ -83,6 +96,7 @@ ML_DIR=~/.coffeedd/mlops
 
 show_sources_all:
 	-ls -laR ${LOCAL_DATA_PATH}
+	-gsutil ls gs://${BUCKET_NAME}
 
 reset_local_files:
 	rm -rf ${ML_DIR}
@@ -91,3 +105,9 @@ reset_local_files:
 	mkdir -p ~/.coffeedd/mlops/training_outputs/models
 	mkdir -p ~/.coffeedd/mlops/training_outputs/params
 	mkdir -p ~/.coffeedd/mlops/training_outputs/checkpoints
+
+reset_gcs_files:
+	-gsutil rm -r gs://${BUCKET_NAME}
+	-gsutil mb -p ${GCP_PROJECT} -l ${GCP_REGION} gs://${BUCKET_NAME}
+
+reset_all_files: reset_local_files reset_gcs_files
