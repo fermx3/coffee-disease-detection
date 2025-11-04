@@ -112,9 +112,8 @@ def build_simple_cnn_model():
 
 def build_vgg16_model():
     """
-    VGG16 adaptativo según tamaño del dataset
-    - Dataset pequeño (<10K): Configuración conservadora
-    - Dataset grande (>=10K): Configuración más agresiva
+    VGG16 mejorado para dataset de 6K imágenes con mejor estabilidad
+    Returns a Keras model.
     """
     # Detectar tamaño aproximado del dataset
     # Importar aquí para evitar circular imports
@@ -136,77 +135,32 @@ def build_vgg16_model():
     print(f"🎯 Configuración VGG16 para {config_name}")
 
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    
+    # Estrategia híbrida: congelar primeras capas, entrenar las últimas
+    # VGG16 tiene 19 capas, congelar las primeras 15, entrenar las últimas 4
+    for i, layer in enumerate(base_model.layers):
+        if i < 15:  # Congelar primeras 15 capas
+            layer.trainable = False
+        else:      # Entrenar últimas 4 capas
+            layer.trainable = True
 
-    if is_large_dataset:
-        # CONFIGURACIÓN PARA DATASET GRANDE (59K+ imágenes)
-        print("⚙️  Aplicando configuración para dataset grande...")
-
-        # Transfer learning MÁS CONSERVADOR
-        # Congelar MÁS capas para evitar overfitting con tantos datos
-        for i, layer in enumerate(base_model.layers):
-            if i < 17:  # Congelar 17 capas (vs 15 para dataset pequeño)
-                layer.trainable = False
-            else:       # Solo entrenar las últimas 2 capas
-                layer.trainable = True
-
-        model = Sequential([
-            base_model,
-            layers.GlobalAveragePooling2D(),
-            layers.BatchNormalization(),
-
-            # Head MÁS SIMPLE para dataset grande
-            layers.Dense(128, activation="relu",
-                        kernel_regularizer=keras.regularizers.l2(0.01)),  # L2 más fuerte
-            layers.BatchNormalization(),
-            layers.Dropout(0.6),  # Dropout MÁS agresivo
-
-            layers.Dense(64, activation="relu",
-                        kernel_regularizer=keras.regularizers.l2(0.01)),
-            layers.BatchNormalization(),
-            layers.Dropout(0.5),
-
-            layers.Dense(5, activation="softmax")
-        ])
-
-        print("   🔒 Capas congeladas: 17/19 (más conservador)")
-        print("   🧠 Head: 128→64→5 (más simple)")
-        print("   🛡️  L2: 0.01 (más fuerte)")
-        print("   💧 Dropout: 0.6→0.5 (más agresivo)")
-
-    else:
-        # CONFIGURACIÓN PARA DATASET PEQUEÑO (<10K imágenes)
-        print("⚙️  Aplicando configuración para dataset pequeño...")
-
-        # Estrategia híbrida original - funciona bien para 6K
-        for i, layer in enumerate(base_model.layers):
-            if i < 15:  # Congelar primeras 15 capas
-                layer.trainable = False
-            else:      # Entrenar últimas 4 capas
-                layer.trainable = True
-
-        model = Sequential([
-            base_model,
-            layers.GlobalAveragePooling2D(),
-            layers.BatchNormalization(),
-
-            # Head original para dataset pequeño
-            layers.Dense(256, activation="relu",
-                        kernel_regularizer=keras.regularizers.l2(0.001)),
-            layers.BatchNormalization(),
-            layers.Dropout(0.4),
-
-            layers.Dense(128, activation="relu",
-                        kernel_regularizer=keras.regularizers.l2(0.001)),
-            layers.BatchNormalization(),
-            layers.Dropout(0.3),
-
-            layers.Dense(5, activation="softmax")
-        ])
-
-        print("   🔒 Capas congeladas: 15/19 (híbrido)")
-        print("   🧠 Head: 256→128→5 (capacidad media)")
-        print("   🛡️  L2: 0.001 (suave)")
-        print("   💧 Dropout: 0.4→0.3 (moderado)")
+    model = Sequential([
+        base_model,
+        layers.GlobalAveragePooling2D(),  # Mejor que Flatten para reducir overfitting
+        layers.BatchNormalization(),     # Estabilizar gradientes
+        
+        # Reducir complejidad del head para evitar overfitting
+        layers.Dense(256, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.BatchNormalization(),
+        layers.Dropout(0.4),  # Dropout más agresivo
+        
+        layers.Dense(128, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
+        layers.BatchNormalization(),
+        layers.Dropout(0.3),
+        
+        # Capa final con menor regularización
+        layers.Dense(5, activation="softmax")  # 5 clases para enfermedades del café
+    ])
 
     return model
 
@@ -295,40 +249,20 @@ def build_efficientnet_model():
 
 def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     """Compila el modelo con el optimizador, la función de pérdida y las métricas adecuadas."""
-
-    # Para VGG16: ajustar learning rate según tamaño del dataset
+    
+    # Para VGG16: usar learning rate más conservador
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # Detectar si es dataset grande
-        if SAMPLE_SIZE is None or SAMPLE_SIZE == 'full':
-            is_large_dataset = True
-        elif isinstance(SAMPLE_SIZE, (int, float)):
-            estimated_size = SAMPLE_SIZE if isinstance(SAMPLE_SIZE, int) else int(SAMPLE_SIZE * 59807)
-            is_large_dataset = estimated_size >= 10000
-        else:
-            is_large_dataset = False
-
-        if is_large_dataset:
-            # Dataset grande: LR MÁS conservador para evitar overfitting
-            learning_rate = min(learning_rate, 0.00005)  # Muy conservador: 5e-5
-            print(f"🔧 VGG16 + Dataset Grande: LR ultra-conservador {learning_rate}")
-        else:
-            # Dataset pequeño: LR conservador original
-            learning_rate = min(learning_rate, 0.0001)  # Max 1e-4 para VGG16
-            print(f"🔧 VGG16 + Dataset Pequeño: LR conservador {learning_rate}")
-
-    # Para EfficientNet: usar learning rate MÁS conservador para evitar colapso
-    elif MODEL_ARCHITECTURE.lower() == "efficientnet":
-        learning_rate = min(learning_rate, 0.0008)  # AUMENTADO de 0.0005 a 0.0008 (menos conservador)
-        print(f"🔧 EfficientNet detectado: usando learning rate balanceado {learning_rate}")
-
+        # Learning rate reducido para VGG16 transfer learning
+        learning_rate = min(learning_rate, 0.0001)  # Max 1e-4 para VGG16
+        print(f"🔧 VGG16 detectado: usando learning rate conservador {learning_rate}")
+    
     model.compile(
         optimizer=keras.optimizers.Adam(
             learning_rate=learning_rate,
             beta_1=0.9,      # Momentum más conservador
-            beta_2=0.999,
-            epsilon=1e-07,   # Estabilidad numérica mejorada
-            clipnorm=0.7 if MODEL_ARCHITECTURE.lower() == "efficientnet" else 1.0,  # Gradient clipping menos estricto (0.7 vs 0.5)
-            clipvalue=0.7 if MODEL_ARCHITECTURE.lower() == "efficientnet" else None  # Clip por valor menos estricto
+            beta_2=0.999,    
+            epsilon=1e-07,   # Estabilidad numérica
+            clipnorm=1.0     # Gradient clipping para evitar explosión
         ),
         loss='categorical_crossentropy',
         metrics=[
@@ -425,98 +359,22 @@ def train_model(
 
     # Configurar callbacks específicos para cada arquitectura
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # Detectar tamaño del dataset para ajustar callbacks
-        if SAMPLE_SIZE is None or SAMPLE_SIZE == 'full':
-            is_large_dataset = True
-        elif isinstance(SAMPLE_SIZE, (int, float)):
-            estimated_size = SAMPLE_SIZE if isinstance(SAMPLE_SIZE, int) else int(SAMPLE_SIZE * 59807)
-            is_large_dataset = estimated_size >= 10000
-        else:
-            is_large_dataset = False
-
-        if is_large_dataset:
-            # VGG16 + Dataset Grande: callbacks MÁS estrictos
-            print("🔧 VGG16 + Dataset Grande: callbacks ultra-conservadores...")
-            callbacks = [
-                keras.callbacks.EarlyStopping(
-                    monitor='val_loss',
-                    patience=5,          # MÁS estricto para evitar overfitting
-                    mode='min',
-                    restore_best_weights=True,
-                    verbose=1,
-                    min_delta=0.001      # Más sensible a mejoras pequeñas
-                ),
-                keras.callbacks.ReduceLROnPlateau(
-                    monitor='val_loss',
-                    factor=0.3,          # Reducción más agresiva
-                    patience=2,          # Reducir LR más rápido
-                    min_lr=1e-8,         # LR mínimo más bajo
-                    mode='min',
-                    verbose=1
-                ),
-                keras.callbacks.ModelCheckpoint(
-                    checkpoint_filename,
-                    monitor='val_loss',
-                    mode='min',
-                    save_best_only=True,
-                    save_weights_only=True,
-                    verbose=1
-                ),
-                RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
-            ]
-            print("   ⏰ EarlyStopping: patience=5 (estricto)")
-            print("   📉 ReduceLR: factor=0.3, patience=2 (agresivo)")
-        else:
-            # VGG16 + Dataset Pequeño: callbacks originales
-            print("🔧 VGG16 + Dataset Pequeño: callbacks conservadores...")
-            callbacks = [
-                keras.callbacks.EarlyStopping(
-                    monitor='val_loss',
-                    patience=8,          # Configuración original
-                    mode='min',
-                    restore_best_weights=True,
-                    verbose=1
-                ),
-                keras.callbacks.ReduceLROnPlateau(
-                    monitor='val_loss',
-                    factor=0.5,          # Reducción más gradual
-                    patience=3,          # Original
-                    min_lr=1e-7,
-                    mode='min',
-                    verbose=1
-                ),
-                keras.callbacks.ModelCheckpoint(
-                    checkpoint_filename,
-                    monitor='val_loss',
-                    mode='min',
-                    save_best_only=True,
-                    save_weights_only=True,
-                    verbose=1
-                ),
-                RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
-            ]
-            print("   ⏰ EarlyStopping: patience=8 (tolerante)")
-            print("   📉 ReduceLR: factor=0.5, patience=3 (gradual)")
-    elif MODEL_ARCHITECTURE.lower() == "efficientnet":
-        # EfficientNet V2.0: callbacks BALANCEADOS (menos estrictos que V1.0)
-        print("🔧 Configurando callbacks BALANCEADOS para EfficientNet V2.0...")
+        # VGG16: callbacks más conservadores para evitar oscilaciones
         callbacks = [
             keras.callbacks.EarlyStopping(
-                monitor='val_loss',
-                patience=8,          # AUMENTADO de 6 a 8 (más paciencia)
+                monitor='val_loss',  # Para VGG16, monitorear loss es más estable
+                patience=8,          # Menos paciencia para evitar overfitting
                 mode='min',
                 restore_best_weights=True,
-                verbose=1,
-                min_delta=0.002      # Menos sensible (0.002 vs 0.001)
+                verbose=1
             ),
             keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5,          # Menos agresivo (0.5 vs 0.4)
-                patience=4,          # Más paciencia (4 vs 3)
+                monitor='val_loss',  # Usar loss para mayor estabilidad
+                factor=0.5,          # Reducción más gradual
+                patience=3,          # Reducir LR más rápido
                 min_lr=1e-7,
                 mode='min',
-                verbose=1,
-                min_delta=0.0005     # Menos sensible (0.0005 vs 0.0001)
+                verbose=1
             ),
             keras.callbacks.ModelCheckpoint(
                 checkpoint_filename,
@@ -526,20 +384,10 @@ def train_model(
                 save_weights_only=True,
                 verbose=1
             ),
-            # Learning Rate Logger para debugging
-            keras.callbacks.CSVLogger(
-                checkpoint_filename.replace('.keras', '_training_log.csv'),
-                append=False
-            ),
             RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
         ]
-        print("✅ Callbacks EfficientNet V2.0 configurados:")
-        print("   � EarlyStopping: patience=8 (más tolerante)")
-        print("   📉 ReduceLR: factor=0.5, patience=4 (menos agresivo)")
-        print("   💾 ModelCheckpoint: monitor=val_loss")
-        print("   � CSV Logger para análisis")
     else:
-        # Callbacks originales para CNN
+        # Callbacks originales para CNN y EfficientNet
         callbacks = [
             keras.callbacks.EarlyStopping(
                 monitor='val_recall',  # Mantener recall como monitor principal
@@ -579,21 +427,8 @@ def train_model(
 
     # Ajustar epochs según tipo de modelo y tamaño de dataset
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # Detectar tamaño del dataset para ajustar epochs
-        if SAMPLE_SIZE is None or SAMPLE_SIZE == 'full':
-            is_large_dataset = True
-        elif isinstance(SAMPLE_SIZE, (int, float)):
-            estimated_size = SAMPLE_SIZE if isinstance(SAMPLE_SIZE, int) else int(SAMPLE_SIZE * 59807)
-            is_large_dataset = estimated_size >= 10000
-        else:
-            is_large_dataset = False
-
-        if is_large_dataset:
-            initial_epochs = 15  # Menos epochs para dataset grande (evitar overfitting)
-            print(f"🔧 VGG16 + Dataset Grande: {initial_epochs} epochs (conservador)")
-        else:
-            initial_epochs = 20  # Original para dataset pequeño
-            print(f"🔧 VGG16 + Dataset Pequeño: {initial_epochs} epochs")
+        # VGG16: fewer epochs para evitar overfitting en 6K imágenes
+        initial_epochs = 20
     elif MODEL_ARCHITECTURE.lower() == "cnn":
         initial_epochs = 30
     else:
@@ -611,69 +446,14 @@ def train_model(
     print("✅ Fase 1 de entrenamiento completada")
     print(f"📈 Recall máximo en validación durante fase 1: {max(history_phase1.history['val_recall']):.4f}")
 
-    # Análisis de estabilidad para EfficientNet
-    if MODEL_ARCHITECTURE.lower() == "efficientnet":
-        val_loss_history = history_phase1.history['val_loss']
-        val_acc_history = history_phase1.history['val_accuracy']
-
-        best_val_loss = min(val_loss_history)
-        best_val_acc = max(val_acc_history)
-        final_val_loss = val_loss_history[-1]
-
-        # Verificar tendencia de loss (últimas 3 epochs)
-        recent_losses = val_loss_history[-3:]
-        loss_increasing = len(recent_losses) >= 2 and recent_losses[-1] > recent_losses[-2]
-        loss_stable = best_val_loss < 0.2  # Loss debe ser muy bajo
-        acc_good = best_val_acc > 0.85     # Accuracy debe ser alta
-
-        print(f"\n📊 Análisis de estabilidad EfficientNet:")
-        print(f"   Mejor val_loss: {best_val_loss:.4f}")
-        print(f"   Mejor val_acc: {best_val_acc:.4f}")
-        print(f"   Val_loss final: {final_val_loss:.4f}")
-        print(f"   Loss estable: {loss_stable}")
-        print(f"   Accuracy buena: {acc_good}")
-        print(f"   Loss aumentando: {loss_increasing}")
-
-    # Condiciones MUY ESTRICTAS para fine-tuning
-    if MODEL_ARCHITECTURE.lower() == "efficientnet":
-        should_finetune = (
-            len(train_labels) >= 8000 and            # REDUCIDO de 10000 a 8000
-            best_val_loss < 0.25 and                 # RELAJADO de 0.15 a 0.25
-            best_val_acc > 0.85 and                  # RELAJADO de 0.90 a 0.85
-            not loss_increasing and                  # Loss NO debe estar aumentando
-            final_val_loss < best_val_loss * 1.3 and # RELAJADO de 1.2 a 1.3
-            fine_tune                                 # Flag habilitado
-        )
-
-        if not should_finetune:
-            print("\n🚨 FINE-TUNING SALTADO para EfficientNet V2.0:")
-            if len(train_labels) < 8000:
-                print(f"   ❌ Dataset pequeño: {len(train_labels)} < 8,000")
-            if best_val_loss >= 0.25:
-                print(f"   ❌ Val_loss alto: {best_val_loss:.4f} >= 0.25")
-            if best_val_acc <= 0.85:
-                print(f"   ❌ Val_accuracy bajo: {best_val_acc:.4f} <= 0.85")
-            if loss_increasing:
-                print("   ❌ Loss está aumentando (inestable)")
-            if final_val_loss >= best_val_loss * 1.3:
-                print(f"   ❌ Loss final deteriorado: {final_val_loss:.4f} vs {best_val_loss:.4f}")
-            print("   ✅ Manteniendo modelo Fase 1 para evitar colapso")
-        else:
-            print("\n🎯 CONDICIONES CUMPLIDAS para fine-tuning EfficientNet V2.0:")
-            print(f"   ✅ Dataset: {len(train_labels)} >= 8,000")
-            print(f"   ✅ Val_loss: {best_val_loss:.4f} < 0.25")
-            print(f"   ✅ Val_accuracy: {best_val_acc:.4f} > 0.85")
-            print(f"   ✅ Loss estable: {not loss_increasing}")
-            print(f"   ✅ Loss final OK: {final_val_loss:.4f} < {best_val_loss * 1.3:.4f}")
-    else:
-        # Condiciones originales para otros modelos
-        should_finetune = (
-            MODEL_ARCHITECTURE.lower() == "efficientnet" and  # Solo EfficientNet
-            len(train_labels) >= 10000 and  # Dataset grande
-            len(history_phase1.history['val_accuracy']) > 0 and
-            max(history_phase1.history['val_accuracy']) > 0.60 and  # Umbral mínimo de accuracy
-            fine_tune
-        )
+    # Para VGG16 con 6K imágenes: NO hacer fine-tuning para evitar overfitting
+    should_finetune = (
+        MODEL_ARCHITECTURE.lower() == "efficientnet" and  # Solo EfficientNet
+        len(train_labels) >= 10000 and  # Dataset grande
+        len(history_phase1.history['val_accuracy']) > 0 and
+        max(history_phase1.history['val_accuracy']) > 0.60 and  # Umbral mínimo de accuracy
+        fine_tune
+    )
 
     if should_finetune:
         model, history_phase2 = fine_tune_model(

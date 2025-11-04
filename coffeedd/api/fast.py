@@ -102,8 +102,8 @@ async def predict(
 def health_check():
     """Check if the model is loaded and ready"""
     try:
-        from coffeedd.interface.main import load_model
-        model = load_model()
+        from coffeedd.interface.main import get_cached_model
+        model = get_cached_model()
         return {
             "status": "healthy",
             "model_loaded": model is not None

@@ -15,7 +15,236 @@ from coffeedd.ml_logic.registry_ml import load_model, save_results, save_model, 
 from coffeedd.ml_logic.model import initialize_model, compile_model, train_model
 from coffeedd.ml_logic.data_analysis import plot_training_metrics_combined, analyze_training_convergence_combined, analyze_false_negatives, analyze_disease_recall
 from coffeedd.ml_logic.gcs_upload import upload_latest_model_to_gcs, list_models_in_gcs
-from coffeedd.params import LOCAL_DATA_PATH, CLASS_NAMES, SAMPLE_SIZE, BATCH_SIZE, FINE_TUNE, SAMPLE_NAME, MODEL_TARGET, MODELS_PATH, NUM_CLASSES, MODEL_NAME
+from coffeedd.params import LOCAL_DATA_PATH, CLASS_NAMES, SAMPLE_SIZE, BATCH_SIZE, FINE_TUNE, SAMPLE_NAME, MODEL_TARGET, MODELS_PATH, NUM_CLASSES, MODEL_NAME, PRODUCTION_MODEL
+
+# Sistema de caché global para el modelo
+_cached_model = None
+_cached_model_path = None
+_production_model_cache = None  # Caché específico para modelo de producción
+
+def get_cached_model():
+    """
+    Obtiene el modelo desde caché o lo carga si no está en memoria.
+
+    Estrategia de carga:
+    1. Si PRODUCTION_MODEL está definido, usa ese modelo específico (rápido)
+    2. Si no, busca el modelo más reciente (normal)
+    3. Para GCS: evita búsquedas innecesarias cuando hay modelo en producción
+
+    Returns:
+        Model: Modelo Keras cargado o None si no existe
+    """
+    global _cached_model, _cached_model_path, _production_model_cache
+
+    try:
+        # Verificar si hay un modelo específico de producción configurado
+        production_model = PRODUCTION_MODEL
+
+        if production_model:
+            return _get_production_model(production_model)
+        else:
+            return _get_latest_model()
+
+    except Exception as e:
+        print(Fore.RED + f"❌ Error en get_cached_model(): {e}" + Style.RESET_ALL)
+        # En caso de error, intentar carga directa
+        return load_model()
+
+def _get_production_model(production_model_name):
+    """
+    Carga un modelo específico de producción (rápido, sin búsquedas)
+
+    Args:
+        production_model_name: Nombre del modelo (ej: model_VGG16_20251102-073551.keras)
+    """
+    global _production_model_cache
+
+    from coffeedd.params import LOCAL_REGISTRY_PATH, MODEL_ARCHITECTURE
+    import os
+
+    # Si ya tenemos el modelo de producción en caché
+    if _production_model_cache is not None and _production_model_cache.get('name') == production_model_name:
+        print(Fore.GREEN + f"⚡ Usando modelo de producción desde caché: {production_model_name}" + Style.RESET_ALL)
+        return _production_model_cache['model']
+
+    # Buscar el modelo específico localmente
+    models_base_dir = os.path.join(LOCAL_REGISTRY_PATH, "models")
+    architecture_dir = os.path.join(models_base_dir, MODEL_ARCHITECTURE.lower())
+    production_model_path = os.path.join(architecture_dir, production_model_name)
+
+    # Si existe localmente, usarlo
+    if os.path.exists(production_model_path):
+        print(Fore.CYAN + f"🎯 Cargando modelo de producción: {production_model_name}" + Style.RESET_ALL)
+        print(Fore.BLUE + f"📁 Desde: {production_model_path}" + Style.RESET_ALL)
+
+        # Cargar directamente sin buscar otros modelos
+        from coffeedd.ml_logic.registry_ml import load_specific_model
+        model = load_specific_model(production_model_path)
+
+        if model:
+            # Almacenar en caché de producción
+            _production_model_cache = {
+                'name': production_model_name,
+                'path': production_model_path,
+                'model': model
+            }
+            print(Fore.GREEN + f"✅ Modelo de producción cargado y cacheado" + Style.RESET_ALL)
+            return model
+
+    # Si no existe localmente y MODEL_TARGET=gcs, intentar descargarlo
+    if MODEL_TARGET == "gcs":
+        print(Fore.YELLOW + f"⚠️  Modelo de producción no encontrado localmente: {production_model_name}" + Style.RESET_ALL)
+        print(Fore.BLUE + f"🔍 Buscando en GCS..." + Style.RESET_ALL)
+
+        # Buscar específicamente este modelo en GCS
+        model = _download_specific_model_from_gcs(production_model_name)
+        if model:
+            _production_model_cache = {
+                'name': production_model_name,
+                'path': f"gcs:{production_model_name}",
+                'model': model
+            }
+            return model
+
+    # Si no se encuentra el modelo de producción, fallback al método normal
+    print(Fore.YELLOW + f"⚠️  Modelo de producción '{production_model_name}' no encontrado" + Style.RESET_ALL)
+    print(Fore.BLUE + f"🔄 Fallback: buscando último modelo disponible..." + Style.RESET_ALL)
+    return _get_latest_model()
+
+def _get_latest_model():
+    """
+    Obtiene el modelo más reciente (método original)
+    """
+    global _cached_model, _cached_model_path
+
+    from coffeedd.ml_logic.registry_ml import find_latest_model_by_architecture
+    from coffeedd.params import LOCAL_REGISTRY_PATH, MODEL_ARCHITECTURE
+    import os
+
+    models_base_dir = os.path.join(LOCAL_REGISTRY_PATH, "models")
+    latest_model_path = find_latest_model_by_architecture(models_base_dir, MODEL_ARCHITECTURE.lower())
+
+    # Si no hay modelo en disco, verificar GCS si es el target
+    if latest_model_path is None and MODEL_TARGET == "gcs":
+        print(Fore.BLUE + "🔍 Verificando modelo en GCS..." + Style.RESET_ALL)
+        # Forzar carga desde GCS (esto actualizará el caché local)
+        _cached_model = load_model()
+        _cached_model_path = "gcs_loaded"  # Marcar como cargado desde GCS
+        return _cached_model
+
+    # Si no hay modelo disponible
+    if latest_model_path is None:
+        print(Fore.YELLOW + "⚠️  No hay modelo disponible" + Style.RESET_ALL)
+        _cached_model = None
+        _cached_model_path = None
+        return None
+
+    # Si ya tenemos el modelo en caché y la ruta no ha cambiado
+    if _cached_model is not None and _cached_model_path == latest_model_path:
+        print(Fore.GREEN + "⚡ Usando modelo desde caché en memoria" + Style.RESET_ALL)
+        return _cached_model
+
+    # Si hay un modelo más reciente o no tenemos caché
+    if _cached_model_path != latest_model_path:
+        if _cached_model_path is not None:
+            print(Fore.BLUE + "🔄 Modelo actualizado detectado, recargando caché..." + Style.RESET_ALL)
+        else:
+            print(Fore.BLUE + "🔄 Cargando modelo en caché..." + Style.RESET_ALL)
+
+        # Cargar el modelo
+        _cached_model = load_model()
+        _cached_model_path = latest_model_path
+
+        if _cached_model is not None:
+            print(Fore.GREEN + "✅ Modelo cargado y almacenado en caché" + Style.RESET_ALL)
+
+        return _cached_model
+
+    return _cached_model
+
+def _download_specific_model_from_gcs(model_name):
+    """
+    Descarga un modelo específico desde GCS sin buscar todos los modelos
+
+    Args:
+        model_name: Nombre del modelo a descargar
+    """
+    try:
+        from google.cloud import storage
+        from coffeedd.params import BUCKET_NAME, LOCAL_REGISTRY_PATH, MODEL_ARCHITECTURE
+        import os
+
+        client = storage.Client()
+        bucket = client.bucket(BUCKET_NAME)
+
+        # Construir la ruta en GCS
+        gcs_path = f"models/{MODEL_ARCHITECTURE.lower()}/{model_name}"
+        blob = bucket.blob(gcs_path)
+
+        if not blob.exists():
+            print(Fore.RED + f"❌ Modelo no encontrado en GCS: {gcs_path}" + Style.RESET_ALL)
+            return None
+
+        # Crear directorio local
+        architecture_dir = os.path.join(LOCAL_REGISTRY_PATH, "models", MODEL_ARCHITECTURE.lower())
+        os.makedirs(architecture_dir, exist_ok=True)
+
+        # Descargar
+        local_path = os.path.join(architecture_dir, model_name)
+        print(Fore.BLUE + f"📥 Descargando modelo específico: {gcs_path}" + Style.RESET_ALL)
+        blob.download_to_filename(local_path)
+
+        # Cargar el modelo descargado
+        from coffeedd.ml_logic.registry_ml import load_specific_model
+        model = load_specific_model(local_path)
+
+        if model:
+            print(Fore.GREEN + f"✅ Modelo de producción descargado y cargado" + Style.RESET_ALL)
+
+        return model
+
+    except Exception as e:
+        print(Fore.RED + f"❌ Error descargando modelo específico: {e}" + Style.RESET_ALL)
+        return None
+
+def clear_model_cache():
+    """Limpia el caché del modelo (útil después de entrenar un nuevo modelo)"""
+    global _cached_model, _cached_model_path
+    _cached_model = None
+    _cached_model_path = None
+    print(Fore.BLUE + "🧹 Caché del modelo limpiado" + Style.RESET_ALL)
+
+def warm_model_cache():
+    """Precalienta el caché cargando el modelo en memoria"""
+    print(Fore.CYAN + "🔥 Precalentando caché del modelo..." + Style.RESET_ALL)
+    model = get_cached_model()
+    if model is not None:
+        print(Fore.GREEN + "✅ Caché precalentado exitosamente" + Style.RESET_ALL)
+        return True
+    else:
+        print(Fore.YELLOW + "⚠️  No hay modelo disponible para precalentar" + Style.RESET_ALL)
+        return False
+
+def get_cache_status():
+    """Obtiene el estado actual del caché"""
+    global _cached_model, _cached_model_path
+
+    model_architecture = None
+    if _cached_model:
+        try:
+            from coffeedd.ml_logic.registry_ml import detect_model_architecture
+            model_architecture = detect_model_architecture(_cached_model.layers)
+        except:
+            model_architecture = "unknown"
+
+    status = {
+        "has_cached_model": _cached_model is not None,
+        "cached_model_path": _cached_model_path,
+        "model_layers": len(_cached_model.layers) if _cached_model else None,
+        "model_architecture": model_architecture
+    }
+
+    return status
 
 @mlflow_run
 def train(metrics_viz=True, test_mode=False):
@@ -42,7 +271,7 @@ def train(metrics_viz=True, test_mode=False):
     #Entrenar el modelo usando `model.py`
         # Cargar o inicializar modelo
     try:
-        model = load_model()
+        model = get_cached_model()
         if model is not None:
             print(Fore.GREEN + "✅ Modelo existente cargado exitosamente" + Style.RESET_ALL)
         else:
@@ -137,6 +366,9 @@ def train(metrics_viz=True, test_mode=False):
         # Save model weight on the hard drive (and optionally on GCS too!)
         save_model(model=model)
 
+        # Limpiar caché después de guardar nuevo modelo
+        clear_model_cache()
+
         # El ultimo modelo debe ser movido a "Staging" en MLflow si se usa MLflow
         if MODEL_TARGET == "mlflow":
             mlflow_transition_model(current_stage="None", new_stage="Staging")
@@ -156,7 +388,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     print(Fore.MAGENTA + "\n🧪 Empezando evaluación del modelo... 🧪" + Style.RESET_ALL)
 
     # Cargar el modelo entrenado
-    model = load_model()
+    model = get_cached_model()
     assert model is not None, "Modelo no encontrado. Entrena el modelo primero."
 
     print(f"🚀 Cargando datos de test... con {SAMPLE_NAME}")
@@ -377,7 +609,7 @@ def pred(img_source=None) -> dict:
     print(Fore.MAGENTA + "\n🔎 Empezando predicción... 🔎" + Style.RESET_ALL)
 
     # Intentar cargar modelo existente
-    model = load_model()
+    model = get_cached_model()
 
     if model is None:
         print(Fore.YELLOW + "⚠️  No se pudo cargar modelo existente" + Style.RESET_ALL)
