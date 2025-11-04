@@ -444,21 +444,21 @@ def plot_training_metrics_combined(combined_history, model_name, sample_name,
     has_fine_tuning, fine_tune_start_epoch = detect_fine_tuning_start(combined_history, verbose)
 
     # Extraer métricas del historial combinado
-    all_accuracy = combined_history.history.get('accuracy', [])
-    all_val_accuracy = combined_history.history.get('val_accuracy', [])
-    all_loss = combined_history.history.get('loss', [])
-    all_val_loss = combined_history.history.get('val_loss', [])
-    all_recall = combined_history.history.get('recall', [])
-    all_val_recall = combined_history.history.get('val_recall', [])
+    accuracy = combined_history.history.get('accuracy', [])
+    val_accuracy = combined_history.history.get('val_accuracy', [])
+    loss = combined_history.history.get('loss', [])
+    val_loss = combined_history.history.get('val_loss', [])
+    recall = combined_history.history.get('recall', [])
+    val_recall = combined_history.history.get('val_recall', [])
 
     # Verificar que tenemos datos
-    if not all_accuracy:
+    if not accuracy:
         if verbose:
             print(f"{Fore.RED}❌ Error: No hay datos de entrenamiento para graficar{Style.RESET_ALL}")
         return {}
     else:
         if verbose:
-            print(f"{Fore.GREEN}✅ Datos disponibles: {len(all_accuracy)} epochs{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}✅ Datos disponibles: {len(accuracy)} epochs{Style.RESET_ALL}")
             if has_fine_tuning:
                 print(f"{Fore.YELLOW}🔧 Fine-tuning detectado desde epoch {fine_tune_start_epoch}{Style.RESET_ALL}")
 
@@ -466,7 +466,7 @@ def plot_training_metrics_combined(combined_history, model_name, sample_name,
     os.makedirs(MODELS_PATH, exist_ok=True)
 
     # Nombre descriptivo para las métricas
-    metrics_filename = f'{MODELS_PATH}/training_metrics_{model_name}_{sample_name}.png'
+    metrics_filename = f'{MODELS_PATH}/training_metrics_{model_name}.png'
 
     # Crear figura con subplots
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -474,13 +474,13 @@ def plot_training_metrics_combined(combined_history, model_name, sample_name,
     # ==========================================
     # 1. ACCURACY PLOT
     # ==========================================
-    if all_accuracy and all_val_accuracy:
-        epochs_range = range(len(all_accuracy))
-        axes[0, 0].plot(epochs_range, all_accuracy, label='Train', linewidth=2, color='#2E86AB')
-        axes[0, 0].plot(epochs_range, all_val_accuracy, label='Validation', linewidth=2, color='#A23B72')
+    if accuracy and val_accuracy:
+        epochs_range = range(len(accuracy))
+        axes[0, 0].plot(epochs_range, accuracy, label='Train', linewidth=2, color='#2E86AB')
+        axes[0, 0].plot(epochs_range, val_accuracy, label='Validation', linewidth=2, color='#A23B72')
 
         # Línea de fine-tuning si fue detectado
-        if has_fine_tuning and fine_tune_start_epoch is not None and fine_tune_start_epoch < len(all_accuracy):
+        if has_fine_tuning and fine_tune_start_epoch is not None and fine_tune_start_epoch < len(accuracy):
             axes[0, 0].axvline(x=fine_tune_start_epoch, color='red', linestyle='--',
                               label='Fine-tuning start', alpha=0.7, linewidth=2)
 
@@ -498,12 +498,12 @@ def plot_training_metrics_combined(combined_history, model_name, sample_name,
     # ==========================================
     # 2. LOSS PLOT
     # ==========================================
-    if all_loss and all_val_loss:
-        epochs_range = range(len(all_loss))
-        axes[0, 1].plot(epochs_range, all_loss, label='Train', linewidth=2, color='#2E86AB')
-        axes[0, 1].plot(epochs_range, all_val_loss, label='Validation', linewidth=2, color='#A23B72')
+    if loss and val_loss:
+        epochs_range = range(len(loss))
+        axes[0, 1].plot(epochs_range, loss, label='Train', linewidth=2, color='#2E86AB')
+        axes[0, 1].plot(epochs_range, val_loss, label='Validation', linewidth=2, color='#A23B72')
 
-        if has_fine_tuning and fine_tune_start_epoch is not None and fine_tune_start_epoch < len(all_loss):
+        if has_fine_tuning and fine_tune_start_epoch is not None and fine_tune_start_epoch < len(loss):
             axes[0, 1].axvline(x=fine_tune_start_epoch, color='red', linestyle='--',
                               label='Fine-tuning start', alpha=0.7, linewidth=2)
 
@@ -520,12 +520,12 @@ def plot_training_metrics_combined(combined_history, model_name, sample_name,
     # ==========================================
     # 3. RECALL PLOT
     # ==========================================
-    if all_recall and all_val_recall:
-        epochs_range = range(len(all_recall))
-        axes[1, 0].plot(epochs_range, all_recall, label='Train', linewidth=2, color='#2E86AB')
-        axes[1, 0].plot(epochs_range, all_val_recall, label='Validation', linewidth=2, color='#A23B72')
+    if recall and val_recall:
+        epochs_range = range(len(recall))
+        axes[1, 0].plot(epochs_range, recall, label='Train', linewidth=2, color='#2E86AB')
+        axes[1, 0].plot(epochs_range, val_recall, label='Validation', linewidth=2, color='#A23B72')
 
-        if has_fine_tuning and fine_tune_start_epoch is not None and fine_tune_start_epoch < len(all_recall):
+        if has_fine_tuning and fine_tune_start_epoch is not None and fine_tune_start_epoch < len(recall):
             axes[1, 0].axvline(x=fine_tune_start_epoch, color='red', linestyle='--',
                               label='Fine-tuning start', alpha=0.7, linewidth=2)
 
@@ -602,37 +602,37 @@ def plot_training_metrics_combined(combined_history, model_name, sample_name,
     mlflow_metrics = {}
 
     # Métricas de entrenamiento (último epoch)
-    if all_accuracy:
+    if accuracy:
         mlflow_metrics.update({
-            "final_train_accuracy": all_accuracy[-1],
-            "final_val_accuracy": all_val_accuracy[-1] if all_val_accuracy else 0,
-            "max_train_accuracy": max(all_accuracy),
-            "max_val_accuracy": max(all_val_accuracy) if all_val_accuracy else 0,
-            "total_epochs": len(all_accuracy)
+            "final_train_accuracy": accuracy[-1],
+            "final_val_accuracy": val_accuracy[-1] if val_accuracy else 0,
+            "max_train_accuracy": max(accuracy),
+            "max_val_accuracy": max(val_accuracy) if val_accuracy else 0,
+            "total_epochs": len(accuracy)
         })
 
-    if all_loss:
+    if loss:
         mlflow_metrics.update({
-            "final_train_loss": all_loss[-1],
-            "final_val_loss": all_val_loss[-1] if all_val_loss else 0,
-            "min_train_loss": min(all_loss),
-            "min_val_loss": min(all_val_loss) if all_val_loss else 0
+            "final_train_loss": loss[-1],
+            "final_val_loss": val_loss[-1] if val_loss else 0,
+            "min_train_loss": min(loss),
+            "min_val_loss": min(val_loss) if val_loss else 0
         })
 
-    if all_recall:
+    if recall:
         mlflow_metrics.update({
-            "final_train_recall": all_recall[-1],
-            "final_val_recall": all_val_recall[-1] if all_val_recall else 0,
-            "max_train_recall": max(all_recall),
-            "max_val_recall": max(all_val_recall) if all_val_recall else 0
+            "final_train_recall": recall[-1],
+            "final_val_recall": val_recall[-1] if val_recall else 0,
+            "max_train_recall": max(recall),
+            "max_val_recall": max(val_recall) if val_recall else 0
         })
 
     # Información sobre fine-tuning
     mlflow_metrics.update({
         "has_fine_tuning": has_fine_tuning,
         "fine_tune_start_epoch": fine_tune_start_epoch if fine_tune_start_epoch else 0,
-        "pre_fine_tune_epochs": fine_tune_start_epoch if fine_tune_start_epoch else len(all_accuracy),
-        "post_fine_tune_epochs": len(all_accuracy) - fine_tune_start_epoch if fine_tune_start_epoch else 0
+        "pre_fine_tune_epochs": fine_tune_start_epoch if fine_tune_start_epoch else len(accuracy),
+        "post_fine_tune_epochs": len(accuracy) - fine_tune_start_epoch if fine_tune_start_epoch else 0
     })
 
     # Métricas de recall por clase (si están disponibles)
@@ -718,7 +718,7 @@ def analyze_training_convergence_combined(combined_history, verbose=True):
             "epochs_since_best_val_loss": epochs_since_best,
             "has_converged": has_converged,
             "val_loss_stability": val_loss_std_last_10,
-            "final_val_loss": val_loss[-1],
+            "convergence_final_val_loss": val_loss[-1],  # Renombrado para evitar duplicado
             "best_val_loss": min(val_loss),
             "fine_tuning_improvement": fine_tuning_improvement
         })

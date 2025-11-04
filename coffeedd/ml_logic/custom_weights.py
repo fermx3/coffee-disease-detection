@@ -92,7 +92,7 @@ def get_class_weights(
                 if is_small_sample:
                     class_weights[idx] = min(weight * 1.3, 3.0)  # Reducido de 1.8
                 else:
-                    class_weights[idx] = weight * 1.1  # Reducido de 1.2
+                    class_weights[idx] = weight * 1  # Reducido de 1.2 luego 1.1
         else:
             # Clases ausentes - peso alto para enfermedades
             if class_name == 'healthy':
