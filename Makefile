@@ -103,6 +103,8 @@ reset_local_files:
 	mkdir -p ~/.coffeedd/mlops/training_outputs
 	mkdir ~/.coffeedd/mlops/training_outputs/metrics
 	mkdir -p ~/.coffeedd/mlops/training_outputs/models
+	mkdir -p ~/.coffeedd/mlops/training_outputs/models/vgg16
+	mkdir -p ~/.coffeedd/mlops/training_outputs/models/efficientnet
 	mkdir -p ~/.coffeedd/mlops/training_outputs/params
 	mkdir -p ~/.coffeedd/mlops/training_outputs/checkpoints
 
