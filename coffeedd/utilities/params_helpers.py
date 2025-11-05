@@ -35,13 +35,15 @@ def get_epochs_for_sample_size(sample_size):
         15
     """
 
-    # Caso especial: dataset completo
+    # Casos especiales
     if sample_size == 'full' or sample_size is None:
-        return 15  # Pocas epochs para dataset grande (59K+)
+        return 10  # ⬇️ Reducido de 15 a 10 epochs para PREVENIR overfitting
+    elif sample_size == 'half':
+        return 12  # Dataset mediano-grande (30K) - epochs moderados
 
     # Validar tipo
     if not isinstance(sample_size, (int, float)):
-        print(f"⚠️  SAMPLE_SIZE debe ser int, float o 'full', recibido: {type(sample_size).__name__}")
+        print(f"⚠️  SAMPLE_SIZE debe ser int, float, 'full' o 'half', recibido: {type(sample_size).__name__}")
         return 60
 
     # Si es float (porcentaje)
