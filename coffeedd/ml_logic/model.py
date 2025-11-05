@@ -112,55 +112,121 @@ def build_simple_cnn_model():
 
 def build_vgg16_model():
     """
-    VGG16 mejorado para dataset de 6K imágenes con mejor estabilidad
-    Returns a Keras model.
+    VGG16 ANTI-OVERFITTING optimizado para generalización en producción
+
+    Basado en la configuración exitosa con "half" dataset que demostró
+    mejor rendimiento en producción. Enfoque en:
+    1. Excelente detección sano vs enfermo
+    2. Mejor discriminación entre enfermedades específicas
+    3. Prevención de overfitting con dataset completo
     """
-    # Detectar tamaño aproximado del dataset
-    # Importar aquí para evitar circular imports
     from coffeedd.utilities.params_helpers import auto_type
 
     sample_size_typed = auto_type(SAMPLE_SIZE)
 
     if sample_size_typed is None or sample_size_typed == 'full':
-        is_large_dataset = True  # Dataset completo (59K)
-        config_name = "DATASET GRANDE (59K+)"
+        is_large_dataset = True
+        config_name = "DATASET GRANDE (59K+) - ANTI-OVERFITTING"
+    elif sample_size_typed == 'half':
+        is_large_dataset = True  # Half del dataset (30K) sigue siendo grande
+        config_name = "DATASET GRANDE (half=30K) - ANTI-OVERFITTING"
     elif isinstance(sample_size_typed, (int, float)):
-        estimated_size = sample_size_typed if isinstance(sample_size_typed, int) else int(sample_size_typed * 59807)
+        if isinstance(sample_size_typed, float) and 0 < sample_size_typed <= 1:
+            # Es un porcentaje
+            estimated_size = int(sample_size_typed * 59807)
+        else:
+            # Es número absoluto de imágenes - SOLO considerar grande si > 10K
+            estimated_size = int(sample_size_typed)
+
+        # Threshold más realista: datasets < 10K son PEQUEÑOS
         is_large_dataset = estimated_size >= 10000
         config_name = f"DATASET {'GRANDE' if is_large_dataset else 'PEQUEÑO'} (~{estimated_size})"
     else:
         is_large_dataset = False
         config_name = "DATASET PEQUEÑO"
 
-    print(f"🎯 Configuración VGG16 para {config_name}")
+    print(f"🎯 VGG16 Anti-Overfitting para {config_name}")
 
     base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-    
-    # Estrategia híbrida: congelar primeras capas, entrenar las últimas
-    # VGG16 tiene 19 capas, congelar las primeras 15, entrenar las últimas 4
-    for i, layer in enumerate(base_model.layers):
-        if i < 15:  # Congelar primeras 15 capas
-            layer.trainable = False
-        else:      # Entrenar últimas 4 capas
-            layer.trainable = True
 
-    model = Sequential([
-        base_model,
-        layers.GlobalAveragePooling2D(),  # Mejor que Flatten para reducir overfitting
-        layers.BatchNormalization(),     # Estabilizar gradientes
-        
-        # Reducir complejidad del head para evitar overfitting
-        layers.Dense(256, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
-        layers.BatchNormalization(),
-        layers.Dropout(0.4),  # Dropout más agresivo
-        
-        layers.Dense(128, activation="relu", kernel_regularizer=keras.regularizers.l2(0.001)),
-        layers.BatchNormalization(),
-        layers.Dropout(0.3),
-        
-        # Capa final con menor regularización
-        layers.Dense(5, activation="softmax")  # 5 clases para enfermedades del café
-    ])
+    if is_large_dataset:
+        # CONFIGURACIÓN ANTI-OVERFITTING para dataset grande
+        print("🛡️  Aplicando configuración ANTI-OVERFITTING para dataset grande...")
+
+        # TRANSFER LEARNING ULTRA-CONSERVADOR
+        # Congelar AÚN MÁS capas que la versión anterior
+        for i, layer in enumerate(base_model.layers):
+            if i < 17:  # Congelar 17/19 capas (más conservador que 15)
+                layer.trainable = False
+            else:       # Solo entrenar últimas 2 capas conv
+                layer.trainable = True
+
+        # HEAD INSPIRADO EN LA VERSIÓN "HALF" EXITOSA pero MÁS CONSERVADOR
+        model = Sequential([
+            base_model,
+            layers.GlobalAveragePooling2D(),
+            layers.BatchNormalization(),
+
+            # Primera capa: MÁS PEQUEÑA que la versión "half" exitosa
+            layers.Dense(128, activation="relu",  # Reducido de 256 a 128
+                        kernel_regularizer=keras.regularizers.l2(0.003)),  # L2 más fuerte que 0.001
+            layers.BatchNormalization(),
+            layers.Dropout(0.5),  # Dropout más agresivo que 0.4
+
+            # Segunda capa: Tamaño intermedio para discriminación de enfermedades
+            layers.Dense(64, activation="relu",   # Reducido de 128 a 64
+                        kernel_regularizer=keras.regularizers.l2(0.003)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.4),  # Dropout más agresivo que 0.3
+
+            # Tercera capa: NUEVA - para mejor discriminación entre enfermedades
+            layers.Dense(32, activation="relu",
+                        kernel_regularizer=keras.regularizers.l2(0.002)),  # L2 suave
+            layers.BatchNormalization(),
+            layers.Dropout(0.3),
+
+            # Capa final
+            layers.Dense(5, activation="softmax")
+        ])
+
+        print("   🔒 Capas congeladas: 17/19 (ultra-conservador)")
+        print("   🧠 Head: 128→64→32→5 (anti-overfitting + discriminación)")
+        print("   🛡️  L2: 0.003→0.003→0.002 (regularización fuerte)")
+        print("   💧 Dropout: 0.5→0.4→0.3 (muy agresivo)")
+
+    else:
+        # CONFIGURACIÓN ORIGINAL EXITOSA para dataset pequeño/mediano
+        print("⚙️  Aplicando configuración EXITOSA para dataset pequeño/mediano...")
+
+        for i, layer in enumerate(base_model.layers):
+            if i < 15:  # Configuración original exitosa
+                layer.trainable = False
+            else:
+                layer.trainable = True
+
+        model = Sequential([
+            base_model,
+            layers.GlobalAveragePooling2D(),
+            layers.BatchNormalization(),
+
+            # Configuración que funcionó bien con "half"
+            layers.Dense(256, activation="relu",
+                        kernel_regularizer=keras.regularizers.l2(0.001)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.4),
+
+            layers.Dense(128, activation="relu",
+                        kernel_regularizer=keras.regularizers.l2(0.001)),
+            layers.BatchNormalization(),
+            layers.Dropout(0.3),
+
+            layers.Dense(5, activation="softmax")
+        ])
+
+        print("   🔒 Capas congeladas: 15/19 (configuración exitosa)")
+        print("   🧠 Head: 256→128→5 (probado exitosamente)")
+        print("   🛡️  L2: 0.001 (suave)")
+        print("   💧 Dropout: 0.4→0.3 (moderado)")
 
     return model
 
@@ -249,18 +315,30 @@ def build_efficientnet_model():
 
 def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
     """Compila el modelo con el optimizador, la función de pérdida y las métricas adecuadas."""
-    
-    # Para VGG16: usar learning rate más conservador
+
+    # Para VGG16: usar learning rate adaptativo anti-overfitting
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # Learning rate reducido para VGG16 transfer learning
-        learning_rate = min(learning_rate, 0.0001)  # Max 1e-4 para VGG16
-        print(f"🔧 VGG16 detectado: usando learning rate conservador {learning_rate}")
-    
+        from coffeedd.utilities.params_helpers import auto_type
+        sample_size_typed = auto_type(SAMPLE_SIZE)
+
+        # Detectar si es dataset grande para aplicar learning rate ultra-conservador
+        if (sample_size_typed == 'full' or sample_size_typed == 'half' or
+            (isinstance(sample_size_typed, (int, float)) and
+             ((isinstance(sample_size_typed, float) and 0 < sample_size_typed <= 1 and int(sample_size_typed * 59807) >= 10000) or
+              (isinstance(sample_size_typed, int) and sample_size_typed >= 10000)))):
+            # LEARNING RATE ULTRA-CONSERVADOR para dataset grande (anti-overfitting)
+            learning_rate = 1e-5  # Extremadamente conservador vs 1e-4 standard
+            print(f"🛡️  VGG16 Anti-Overfitting: LR ultra-conservador {learning_rate} para dataset grande")
+        else:
+            # Learning rate moderado para dataset pequeño/mediano (configuración exitosa)
+            learning_rate = min(learning_rate, 0.0001)  # 1e-4 - configuración que funcionó bien
+            print(f"🔧 VGG16 configuración exitosa: LR conservador {learning_rate} para dataset pequeño/mediano")
+
     model.compile(
         optimizer=keras.optimizers.Adam(
             learning_rate=learning_rate,
-            beta_1=0.9,      # Momentum más conservador
-            beta_2=0.999,    
+            beta_1=0.9,      # Momentum conservador
+            beta_2=0.999,
             epsilon=1e-07,   # Estabilidad numérica
             clipnorm=1.0     # Gradient clipping para evitar explosión
         ),
