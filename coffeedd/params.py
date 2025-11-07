@@ -25,7 +25,7 @@ LOCAL_DATA_PATH = os.path.join(
     "fermx3",
     "coffee-disease-detection",
     "data",
-    "processed_data",
+    "processed_data_full",
 )
 
 LOCAL_RAW_DATA_PATH = os.path.join(
@@ -49,7 +49,7 @@ MODELS_PATH = os.path.join(
 
 # Carpeta para guardar registros
 LOCAL_REGISTRY_PATH = os.path.join(
-    os.path.expanduser("~"),
+    os.environ.get('HOME', os.path.expanduser("~")),
     ".coffeedd",
     "mlops",
     "training_outputs",

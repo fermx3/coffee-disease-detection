@@ -25,6 +25,12 @@ pytz # timezone library
 uvicorn # server for fastapi
 python-multipart  # for handling file uploads in FastAPI
 
+# Additional packages
+opencv-python-headless
+seaborn
+matplotlib
+scikit-learn
+
 # test
 httpx #HTTP client
 pytest-asyncio  # asynchronous I/O support for pytest
