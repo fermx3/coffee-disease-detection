@@ -7,19 +7,22 @@ from coffeedd.params import CLASS_NAMES, EPOCHS, MODELS_PATH, NUM_CLASSES
 
 
 def find_rarest_disease_class(data_path, class_names, extreme_threshold=0.5):
-    """
-    Encuentra la clase de enfermedad con menos muestras solo si hay un desequilibrio extremo
+    """Identify the rarest disease class when extreme imbalance exists.
+
+    This inspects the filesystem under ``data_path`` for each class folder in
+    ``class_names`` (ignoring 'healthy') and computes simple statistics.
 
     Args:
-        data_path: Ruta al dataset
-        class_names: Lista de nombres de clases
-        extreme_threshold: Factor mínimo de diferencia para considerar "extremadamente rara"
-                          (ej: 0.5 = la clase rara debe tener menos de la mitad que el promedio)
+        data_path: Path to the dataset directory.
+        class_names: Iterable of class names (strings).
+        extreme_threshold: Float threshold used to decide extreme rarity
+            relative to the average (e.g. 0.5 means "less than half the average").
 
     Returns:
-        tuple: (clase_más_rara, count, es_extrema, estadísticas)
+        tuple: (rarest_class_name or None, min_count, is_extreme_bool, stats_dict)
     """
-    # Detectar automáticamente las clases de enfermedad (todas excepto 'healthy')
+
+    # Identify disease classes (exclude healthy)
     disease_classes = [name for name in CLASS_NAMES if name != "healthy"]
     num_disease_classes = len(disease_classes)
     class_counts = {}
@@ -42,22 +45,20 @@ def find_rarest_disease_class(data_path, class_names, extreme_threshold=0.5):
     if not class_counts:
         return None, 0, False, {}
 
-    # Calcular estadísticas
+    # Compute statistics
     counts = list(class_counts.values())
     min_count = min(counts)
     max_count = max(counts)
     avg_count = sum(counts) / len(counts)
 
-    # Encontrar la clase más rara
+    # Rarest class name
     rarest_class = min(class_counts, key=class_counts.get)
 
-    # Determinar si es extremadamente rara
-    # Criterios múltiples para considerar "extrema":
+    # Compute ratios for heuristic extreme-imbalance detection
     ratio_vs_avg = min_count / avg_count if avg_count > 0 else 1
     ratio_vs_max = min_count / max_count if max_count > 0 else 1
 
-    # Es extrema si tiene menos del threshold% comparado con el promedio
-    # Y menos del 30% comparado con la clase más común
+    # Extreme if much smaller than the average AND much smaller than the max
     is_extreme = ratio_vs_avg < extreme_threshold and ratio_vs_max < 0.3
 
     stats = {
@@ -70,6 +71,7 @@ def find_rarest_disease_class(data_path, class_names, extreme_threshold=0.5):
         "is_extreme": is_extreme,
     }
 
+    # Print an informational header (Spanish intentionally preserved)
     print("\n🎯 Configuración optimizada para DETECCIÓN DE ENFERMEDADES:")
     print("  📊 Objetivo: Minimizar falsos negativos (enfermedad → healthy)")
     print(
@@ -84,11 +86,11 @@ def find_rarest_disease_class(data_path, class_names, extreme_threshold=0.5):
 
 
 def false_negatives_analysis(test_labels, y_pred_test_classes):
-    """
-    Realiza un análisis detallado de los falsos negativos en el conjunto de prueba.
+    """Detailed false-negative analysis for the test set.
+
     Args:
-        test_labels: Etiquetas reales del conjunto de prueba.
-        y_pred_test_classes: Predicciones del modelo para el conjunto de prueba.
+        test_labels: Array-like of true labels for the test set.
+        y_pred_test_classes: Array-like of predicted class indices for the test set.
     """
     print("\n" + "=" * 60)
     print("⚠️  ANÁLISIS DETALLADO DE FALSOS NEGATIVOS")
@@ -104,16 +106,15 @@ def false_negatives_analysis(test_labels, y_pred_test_classes):
     for idx, class_name in enumerate(CLASS_NAMES):
         if class_name == "healthy":
             continue  # Saltar la clase healthy
-
-        # Máscara para casos reales de esta enfermedad
+        # Mask for true cases of this disease
         mask_true = test_labels == idx
         total_cases = np.sum(mask_true)
 
         if total_cases > 0:
-            # Máscara para predicciones incorrectas como 'healthy'
+            # Mask for model predictions equal to 'healthy'
             mask_pred_healthy = y_pred_test_classes == healthy_idx
 
-            # Falsos negativos: casos reales de enfermedad predichos como healthy
+            # False negatives: true disease predicted as healthy
             fn = np.sum(mask_true & mask_pred_healthy)
             fn_rate = (fn / total_cases) * 100
 
@@ -129,7 +130,7 @@ def false_negatives_analysis(test_labels, y_pred_test_classes):
         overall_fn_rate = (total_fn / total_disease_samples) * 100
         print(f"📈 Tasa global de Falsos Negativos: {overall_fn_rate:.1f}%")
 
-    # Análisis adicional: ¿A qué clases se confunden las enfermedades?
+    # Additional analysis: which classes do diseases get confused with?
     print("\n🔍 Análisis de confusiones por enfermedad:")
     for idx, class_name in enumerate(CLASS_NAMES):
         if class_name == "healthy":
@@ -157,24 +158,24 @@ def false_negatives_analysis(test_labels, y_pred_test_classes):
 
 
 def analyze_false_negatives(test_labels, y_pred_test_classes, verbose=True):
-    """
-    Analiza los falsos negativos del modelo, especialmente casos de enfermedad predichos como 'healthy'
+    """Analyze false negatives and build MLflow-friendly metrics.
+
+    Focuses on disease -> healthy false negatives and per-class rates.
 
     Args:
-        test_labels: Array con las etiquetas reales del test set
-        y_pred_test_classes: Array con las predicciones del modelo (clases)
-        CLASS_NAMES: Lista con los nombres de las clases
-        verbose: Si True, imprime el análisis detallado
+        test_labels: Array-like of true labels for the test set.
+        y_pred_test_classes: Array-like of predicted class indices for the test set.
+        verbose: If True, print a human-readable report.
 
     Returns:
-        dict: Diccionario con métricas detalladas para MLflow
+        dict: Aggregated metrics suitable for logging to MLflow.
     """
     if verbose:
         print("\n" + "=" * 60)
         print(Fore.RED + "⚠️  ANÁLISIS DETALLADO DE FALSOS NEGATIVOS" + Style.RESET_ALL)
         print("=" * 60)
 
-    # Encontrar el índice de la clase 'healthy'
+    # Find index for the 'healthy' class
     healthy_idx = None
     for idx, class_name in enumerate(CLASS_NAMES):
         if "healthy" in class_name.lower() or "sano" in class_name.lower():
@@ -186,7 +187,7 @@ def analyze_false_negatives(test_labels, y_pred_test_classes, verbose=True):
             print(
                 f"{Fore.YELLOW}⚠️  No se encontró clase 'healthy' en {CLASS_NAMES}{Style.RESET_ALL}"
             )
-        # Asumir que la primera clase es healthy si no se encuentra
+        # Fallback: assume first class is healthy
         healthy_idx = 0
         if verbose:
             print(
@@ -204,7 +205,7 @@ def analyze_false_negatives(test_labels, y_pred_test_classes, verbose=True):
     total_disease_samples = 0
     class_fn_rates = {}
 
-    # Analizar cada clase de enfermedad
+    # Analyze each disease class
     for idx, class_name in enumerate(CLASS_NAMES):
         if idx == healthy_idx:
             continue  # Saltar la clase healthy
@@ -214,10 +215,10 @@ def analyze_false_negatives(test_labels, y_pred_test_classes, verbose=True):
         total_cases = np.sum(mask_true)
 
         if total_cases > 0:
-            # Máscara para predicciones incorrectas como 'healthy'
+            # Mask for predictions equal to 'healthy'
             mask_pred_healthy = y_pred_test_classes == healthy_idx
 
-            # Falsos negativos: casos reales de enfermedad predichos como healthy
+            # False negatives: true disease predicted as healthy
             fn = np.sum(mask_true & mask_pred_healthy)
             fn_rate = (fn / total_cases) * 100
 
@@ -233,11 +234,11 @@ def analyze_false_negatives(test_labels, y_pred_test_classes, verbose=True):
             total_fn += fn
             total_disease_samples += total_cases
 
-    if verbose:
-        print(f"\n{Fore.RED}🔴 Total Falsos Negativos: {total_fn}{Style.RESET_ALL}")
-        print(
-            f"{Fore.BLUE}📊 Total casos de enfermedad en test: {total_disease_samples}{Style.RESET_ALL}"
-        )
+            if verbose:
+                print(f"\n{Fore.RED}🔴 Total Falsos Negativos: {total_fn}{Style.RESET_ALL}")
+                print(
+                    f"{Fore.BLUE}📊 Total casos de enfermedad en test: {total_disease_samples}{Style.RESET_ALL}"
+                )
 
     # Métricas globales
     overall_fn_rate = 0
@@ -333,17 +334,10 @@ def analyze_false_negatives(test_labels, y_pred_test_classes, verbose=True):
 
 
 def analyze_disease_recall(test_labels, y_pred_test_classes, verbose=True):
-    """
-    Calcula el recall específico para la detección de enfermedades (cualquier enfermedad vs healthy)
+    """Compute disease-detection metrics treating all diseases vs healthy.
 
-    Args:
-        test_labels: Array con las etiquetas reales del test set
-        y_pred_test_classes: Array con las predicciones del modelo (clases)
-        CLASS_NAMES: Lista con los nombres de las clases
-        verbose: Si True, imprime el análisis detallado
-
-    Returns:
-        dict: Diccionario con métricas de disease recall para MLflow
+    Converts multi-class predictions to binary (disease vs healthy) and
+    returns recall/precision/F1/accuracy plus counts.
     """
     # Encontrar el índice de la clase 'healthy'
     healthy_idx = None
@@ -412,23 +406,18 @@ def analyze_disease_recall(test_labels, y_pred_test_classes, verbose=True):
 
 
 def detect_fine_tuning_start(combined_history, verbose=True):
-    """
-    Detecta automáticamente si hubo fine-tuning analizando cambios bruscos en learning rate o pérdida
+    """Detect whether training includes a fine-tuning phase.
 
-    Args:
-        combined_history: History combinado de Keras
-        verbose: Si True, imprime información de debug
-
-    Returns:
-        tuple: (has_fine_tuning, fine_tune_start_epoch)
+    Heuristics look for sudden drops in loss (train or validation) and
+    prefer detections within a plausible epoch range.
     """
     loss_values = combined_history.history.get("loss", [])
     val_loss_values = combined_history.history.get("val_loss", [])
 
-    if len(loss_values) < 10:  # Muy pocos epochs para detectar fine-tuning
+    if len(loss_values) < 10:  # Too few epochs to detect fine-tuning
         return False, None
 
-    # Detectar cambios bruscos en la pérdida (indicativo de fine-tuning)
+    # Detect sudden drops in loss (typical when layers are unfrozen)
     loss_diffs = np.diff(loss_values)
 
     # Buscar caídas significativas en la pérdida (typical cuando se descongelan capas)
@@ -438,14 +427,14 @@ def detect_fine_tuning_start(combined_history, verbose=True):
         if diff < -0.2 * loss_values[i] and abs(diff) > 0.1:
             significant_drops.append(i + 1)  # +1 porque diff está desplazado
 
-    # También buscar en validation loss
+    # Also examine validation loss
     if val_loss_values:
         val_loss_diffs = np.diff(val_loss_values)
         for i, diff in enumerate(val_loss_diffs[5:], start=5):
             if diff < -0.2 * val_loss_values[i] and abs(diff) > 0.1:
                 significant_drops.append(i + 1)
 
-    # Detectar patrones de fine-tuning típicos (alrededor de epoch 15 para EfficientNet)
+    # Look for likely fine-tuning epochs in a plausible range
     likely_fine_tune_epochs = [e for e in significant_drops if 10 <= e <= 25]
 
     if likely_fine_tune_epochs:
@@ -456,7 +445,7 @@ def detect_fine_tuning_start(combined_history, verbose=True):
             )
         return True, fine_tune_start
 
-    # Fallback: Si hay más de 20 epochs, asumir que epoch 15 es fine-tuning
+    # Fallback: if training is long, assume fine-tuning starts at epoch 15
     if len(loss_values) > 20:
         if verbose:
             print(
@@ -475,21 +464,26 @@ def plot_training_metrics_combined(
     y_pred_test_classes=None,
     verbose=True,
 ):
-    """
-    Genera visualizaciones completas de las métricas de entrenamiento usando historial combinado
+    """Generate comprehensive training metric visualizations from history.
+
+    This function builds accuracy/loss/recall plots plus a per-class recall
+    bar chart (if test predictions are provided). It saves a PNG to
+    ``MODELS_PATH`` and returns a metrics dict suitable for MLflow logging.
+
+    Notes:
+    - Human-facing prints are intentionally left in Spanish to match the
+      project's CLI style.
 
     Args:
-        combined_history: History combinado de Keras (resultado de train_model)
-        model_name: Nombre del modelo para títulos
-        sample_name: Nombre de la muestra para archivos
-        MODELS_PATH: Directorio donde guardar las imágenes
-        CLASS_NAMES: Lista con nombres de las clases
-        test_labels: Etiquetas del test set (opcional, para recall por clase)
-        y_pred_test_classes: Predicciones del test (opcional, para recall por clase)
-        verbose: Si True, imprime información detallada
+        combined_history: Keras History-like object containing training metrics.
+        model_name: String used for plot titles and saved filename.
+        sample_name: Sample name inserted into plot titles.
+        test_labels: Optional array-like of true test labels.
+        y_pred_test_classes: Optional array-like of predicted test classes.
+        verbose: If True, print progress and summary information.
 
     Returns:
-        dict: Métricas para MLflow
+        dict of aggregated metrics for MLflow.
     """
     if verbose:
         print("\n" + "=" * 60)
@@ -742,20 +736,21 @@ def plot_training_metrics_combined(
         )
         axes[1, 1].set_title("Recall por Clase - Pending")
 
-    plt.tight_layout()
+    # Use the Figure object directly to layout and save (avoids unused var)
+    fig.tight_layout()
 
-    # Guardar la figura
+    # Save the figure
     try:
-        plt.savefig(metrics_filename, dpi=300, bbox_inches="tight")
+        fig.savefig(metrics_filename, dpi=300, bbox_inches="tight")
         if verbose:
             print(
                 f"{Fore.GREEN}💾 Métricas de entrenamiento guardadas: {metrics_filename}{Style.RESET_ALL}"
             )
-        plt.close()  # Cerrar para liberar memoria
+        plt.close(fig)  # Close the specific figure to free memory
     except Exception as e:
         if verbose:
             print(f"{Fore.RED}⚠️ Error al guardar gráfico: {e}{Style.RESET_ALL}")
-        plt.close()
+        plt.close(fig)
 
     # ==========================================
     # CALCULAR MÉTRICAS PARA MLFLOW
@@ -853,15 +848,11 @@ def plot_training_metrics_combined(
 
 
 def analyze_training_convergence_combined(combined_history, verbose=True):
-    """
-    Analiza la convergencia del entrenamiento usando historial combinado
+    """Analyze training convergence from a combined Keras History.
 
-    Args:
-        combined_history: History combinado de Keras
-        verbose: Si True, imprime el análisis
-
-    Returns:
-        dict: Análisis de convergencia para MLflow
+    Computes heuristics such as overfitting detection, convergence stability,
+    and an estimate of fine-tuning benefit. Returns a dictionary suitable
+    for MLflow logging.
     """
     if verbose:
         print(
@@ -869,9 +860,8 @@ def analyze_training_convergence_combined(combined_history, verbose=True):
         )
         print("=" * 60)
 
-    # Extraer métricas
+    # Extract metrics from the combined history
     val_loss = combined_history.history.get("val_loss", [])
-    val_acc = combined_history.history.get("val_accuracy", [])
     train_loss = combined_history.history.get("loss", [])
 
     convergence_metrics = {}
