@@ -120,3 +120,18 @@ docker_build:
 
 docker_run: # you can test the API endpoints at http://localhost:8000/docs
 	docker run -p 8000:8000 coffeedd-api
+
+#################### YOLO (ULTRALYTICS) ###################
+
+install_yolo:
+	# 1) Clean any previous YOLO + torch installs (no wildcards)
+	@pip uninstall -y ultralytics torch torchvision torchaudio || :
+	# 2) Install CPU-only PyTorch stack
+	pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+	# 3) Install YOLO + API deps
+	pip install ultralytics
+	pip install -r requirements_yolo.txt
+
+run_yolo_api:
+	uvicorn coffeedd.api.api_yolo:app --reload
+
