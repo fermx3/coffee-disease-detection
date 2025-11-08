@@ -1,36 +1,23 @@
-"""
-🎯 CLASS WEIGHTS OPTIMIZADOS PARA EFFICIENTNET
-============================================
+"""Class weights recommendations for EfficientNet.
 
-📊 PROBLEMA IDENTIFICADO:
-El EfficientNet actual tiene problemas para distinguir 'healthy' de enfermedades,
-causando confusión entre clases y recall bajo para plantas sanas.
+This module provides several pre-defined class-weight strategies and a small
+analysis helper that computes weights from the training label distribution.
 
-🔧 ESTRATEGIAS DE CLASS WEIGHTS:
+Strategies included:
+- conservative: minimal differences between classes to avoid overfitting
+- balanced: near-uniform weights to avoid bias
+- healthy-focused: higher weight for the "healthy" class
+- disease-balanced: inverse-frequency weights to boost rare classes
 
-1. BALANCED WEIGHTS (Recomendado para empezar):
-   - Todos los pesos cercanos a 1.0
-   - Evita sesgo extremo hacia cualquier clase
-   - Permite que el modelo aprenda naturalmente
-
-2. HEALTHY-FOCUSED WEIGHTS (Si persiste confusión):
-   - Peso ligeramente mayor para 'healthy'
-   - Penaliza más los falsos negativos de plantas sanas
-   - Útil si el modelo marca sanas como enfermas
-
-3. DISEASE-BALANCED WEIGHTS (Para recall de enfermedades):
-   - Weights según frecuencia inversa de clases
-   - Boost a clases minoritarias
-   - Mantiene balance entre todas las enfermedades
-
-📈 WEIGHTS RECOMENDADOS BASADOS EN ANÁLISIS:
+The recommendations are intended to be used with Keras' ``model.fit`` via
+the ``class_weight`` parameter.
 """
 
 
 def get_balanced_class_weights():
-    """
-    Class weights balanceados para reducir confusión entre clases.
-    Estrategia conservadora para evitar sesgo extremo.
+    """Return near-uniform class weights to avoid introducing bias.
+
+    Use this conservative strategy as a neutral starting point.
     """
     return {
         0: 1.0,  # cerscospora - peso neutro
@@ -42,9 +29,9 @@ def get_balanced_class_weights():
 
 
 def get_healthy_focused_weights():
-    """
-    Class weights enfocados en mejorar detección de plantas sanas.
-    Usar si el modelo confunde sanas con enfermas frecuentemente.
+    """Return class weights that prioritize correct healthy predictions.
+
+    Use when the model frequently confuses healthy plants with diseased ones.
     """
     return {
         0: 0.9,  # cerscospora - reducir peso
@@ -56,9 +43,9 @@ def get_healthy_focused_weights():
 
 
 def get_disease_balanced_weights():
-    """
-    Class weights balanceados por frecuencia de cada enfermedad.
-    Basado en distribución típica de dataset de café.
+    """Return class weights based on inverse-frequency boosting.
+
+    This strategy increases weights for under-represented disease classes.
     """
     return {
         0: 1.2,  # cerscospora - boost moderado
@@ -70,9 +57,9 @@ def get_disease_balanced_weights():
 
 
 def get_conservative_weights():
-    """
-    Class weights ultra-conservadores para evitar overfitting.
-    Mínimas diferencias entre clases.
+    """Return conservative weights with minimal differences between classes.
+
+    This reduces the risk of overfitting caused by large weight disparities.
     """
     return {
         0: 1.0,  # cerscospora
@@ -84,18 +71,17 @@ def get_conservative_weights():
 
 
 def analyze_class_distribution(train_labels):
-    """
-    Analiza la distribución de clases y recomienda weights.
+    """Analyze class frequency and compute inverse-frequency weights.
 
     Args:
-        train_labels: Array de etiquetas de entrenamiento
+        train_labels: Array-like of training labels.
 
     Returns:
-        dict: Class weights recomendados basados en distribución
+        dict: Mapping from class index to recommended weight (float).
     """
     import numpy as np
 
-    # Contar frecuencia de cada clase
+    # Count occurrences per class
     unique, counts = np.unique(train_labels, return_counts=True)
     total_samples = len(train_labels)
 
@@ -108,16 +94,16 @@ def analyze_class_distribution(train_labels):
         percentage = (count / total_samples) * 100
         print(f"  {class_names[class_idx]:15s}: {count:4d} ({percentage:5.1f}%)")
 
-    # Calcular weights inversos a la frecuencia
+    # Compute inverse-frequency weights and clip extremes
     max_count = max(counts)
     weights = {}
 
     print("\n🎯 WEIGHTS CALCULADOS (Frecuencia Inversa):")
     for class_idx, count in zip(unique, counts):
         weight = max_count / count
-        # Suavizar para evitar weights extremos
-        weight = min(weight, 2.0)  # Máximo 2x
-        weight = max(weight, 0.5)  # Mínimo 0.5x
+        # Smooth to avoid extreme weights
+        weight = min(weight, 2.0)  # max 2x
+        weight = max(weight, 0.5)  # min 0.5x
         weights[class_idx] = round(weight, 2)
         print(f"  {class_names[class_idx]:15s}: {weight:.2f}")
 
@@ -125,55 +111,47 @@ def analyze_class_distribution(train_labels):
 
 
 def recommend_weights_for_efficientnet(train_labels, validation_metrics=None):
-    """
-    Recomienda class weights específicos para EfficientNet basado en:
-    1. Distribución de clases
-    2. Métricas de validación previas (si disponibles)
-    3. Problemas específicos identificados
+    """Recommend class weights for EfficientNet.
 
-    Args:
-        train_labels: Array de etiquetas de entrenamiento
-        validation_metrics: Dict con métricas de runs previos (opcional)
-
-    Returns:
-        dict: Class weights recomendados
+    The recommendation considers class distribution and optional prior
+    validation metrics. Returns a conservative default weight mapping.
     """
 
     print("\n🚀 RECOMENDACIÓN DE CLASS WEIGHTS PARA EFFICIENTNET")
     print("=" * 60)
 
-    # Analizar distribución
+    # Analyze distribution and compute frequency-based weights
     calculated_weights = analyze_class_distribution(train_labels)
 
-    # Ajustar basado en problemas conocidos del EfficientNet
+    # If validation metrics are provided, display them for context
     if validation_metrics:
         print("\n📈 Métricas previas disponibles:")
         for metric, value in validation_metrics.items():
             print(f"  {metric}: {value:.4f}")
 
-    print("\n💡 RECOMENDACIONES:")
-    print("1. 🟢 CONSERVADOR (empezar aquí):")
+    print("\n💡 RECOMMENDATIONS:")
+    print("1. 🟢 CONSERVATIVE (start here):")
     conservative = get_conservative_weights()
     for i, (k, v) in enumerate(conservative.items()):
         class_name = ["cerscospora", "healthy", "leaf_rust", "miner", "phoma"][k]
         print(f"     {class_name}: {v}")
 
-    print("\n2. 🔄 BALANCEADO (si conservador no funciona):")
+    print("\n2. 🔄 BALANCED (if conservative does not work):")
     balanced = get_balanced_class_weights()
     for i, (k, v) in enumerate(balanced.items()):
         class_name = ["cerscospora", "healthy", "leaf_rust", "miner", "phoma"][k]
         print(f"     {class_name}: {v}")
 
-    print("\n3. 🎯 CALCULADO (basado en frecuencia):")
+    print("\n3. 🎯 CALCULATED (based on frequency):")
     for i, (k, v) in enumerate(calculated_weights.items()):
         class_name = ["cerscospora", "healthy", "leaf_rust", "miner", "phoma"][k]
         print(f"     {class_name}: {v}")
 
-    print("\n🔧 ESTRATEGIA RECOMENDADA:")
-    print("  1. Empezar con CONSERVADOR")
-    print("  2. Si confunde healthy → usar healthy_focused_weights()")
-    print("  3. Si recall bajo en enfermedades → usar CALCULADO")
-    print("  4. Monitorear confusion matrix cada 5 epochs")
+    print("\n🔧 RECOMMENDED STRATEGY:")
+    print("  1. Start with CONSERVATIVE")
+    print("  2. If healthy is confused → use healthy_focused_weights()")
+    print("  3. If disease recall is low → use CALCULATED")
+    print("  4. Monitor confusion matrix every 5 epochs")
 
     return conservative  # Devolver weights conservadores por defecto
 
