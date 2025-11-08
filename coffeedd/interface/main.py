@@ -1,12 +1,18 @@
+"""Main interface for Coffee Disease Detection ML operations:
+- Training
+- Evaluation
+- Prediction
+"""
+from io import BytesIO
+import base64
+import os
+
 import numpy as np
 from colorama import Fore, Style
 from PIL import Image
-from io import BytesIO
-import base64
-from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
-import os
+from sklearn.metrics import classification_report, confusion_matrix
 
 from coffeedd.ml_logic.data import create_dataset_from_directory, create_tf_dataset
 from coffeedd.ml_logic.custom_weights import get_class_weights
@@ -37,27 +43,28 @@ from coffeedd.params import (
     NUM_CLASSES,
     MODEL_NAME,
     PRODUCTION_MODEL,
+    LOCAL_REGISTRY_PATH,
+    MODEL_ARCHITECTURE
 )
 
-# Sistema de caché global para el modelo
-_cached_model = None
-_cached_model_path = None
-_production_model_cache = None  # Caché específico para modelo de producción
+# Global model cache system
+_CACHED_MODEL = None
+_CACHED_MODEL_PATH = None
+_PRODUCTION_MODEL_CACHE = None
 
 
 def get_cached_model():
-    """
-    Obtiene el modelo desde caché o lo carga si no está en memoria.
+    """Get the model from cache or load it if not in memory.
 
-    Estrategia de carga:
-    1. Si PRODUCTION_MODEL está definido, usa ese modelo específico (rápido)
-    2. Si no, busca el modelo más reciente (normal)
-    3. Para GCS: evita búsquedas innecesarias cuando hay modelo en producción
+    Loading strategy:
+    1. If PRODUCTION_MODEL is defined, use that specific model (fast)
+    2. Otherwise, search for the most recent model (normal)
+    3. For GCS: avoid unnecessary searches when there's a production model
 
     Returns:
-        Model: Modelo Keras cargado o None si no existe
+        Loaded Keras model or None if it doesn't exist.
     """
-    global _cached_model, _cached_model_path, _production_model_cache
+    global _CACHED_MODEL, _CACHED_MODEL_PATH, _PRODUCTION_MODEL_CACHE
 
     try:
         # Verificar si hay un modelo específico de producción configurado
@@ -70,40 +77,36 @@ def get_cached_model():
 
     except Exception as e:
         print(Fore.RED + f"❌ Error en get_cached_model(): {e}" + Style.RESET_ALL)
-        # En caso de error, intentar carga directa
+        # In case of error, attempt direct loading
         return load_model()
 
 
 def _get_production_model(production_model_name):
-    """
-    Carga un modelo específico de producción (rápido, sin búsquedas)
+    """Load a specific production model (fast, no searches).
 
     Args:
-        production_model_name: Nombre del modelo (ej: model_VGG16_20251102-073551.keras)
+        production_model_name: Model name (e.g., model_VGG16_20251102-073551.keras)
     """
-    global _production_model_cache
+    global _PRODUCTION_MODEL_CACHE
 
-    from coffeedd.params import LOCAL_REGISTRY_PATH, MODEL_ARCHITECTURE
-    import os
-
-    # Si ya tenemos el modelo de producción en caché
+    # If we already have the production model in cache
     if (
-        _production_model_cache is not None
-        and _production_model_cache.get("name") == production_model_name
+        _PRODUCTION_MODEL_CACHE is not None
+        and _PRODUCTION_MODEL_CACHE.get("name") == production_model_name
     ):
         print(
             Fore.GREEN
             + f"⚡ Usando modelo de producción desde caché: {production_model_name}"
             + Style.RESET_ALL
         )
-        return _production_model_cache["model"]
+        return _PRODUCTION_MODEL_CACHE["model"]
 
-    # Buscar el modelo específico localmente
+    # Search for the specific model locally
     models_base_dir = os.path.join(LOCAL_REGISTRY_PATH, "models")
     architecture_dir = os.path.join(models_base_dir, MODEL_ARCHITECTURE.lower())
     production_model_path = os.path.join(architecture_dir, production_model_name)
 
-    # Si existe localmente, usarlo
+    # If it exists locally, use it
     if os.path.exists(production_model_path):
         print(
             Fore.CYAN
@@ -112,14 +115,14 @@ def _get_production_model(production_model_name):
         )
         print(Fore.BLUE + f"📁 Desde: {production_model_path}" + Style.RESET_ALL)
 
-        # Cargar directamente sin buscar otros modelos
+        # Load directly without searching for other models
         from coffeedd.ml_logic.registry_ml import load_specific_model
 
         model = load_specific_model(production_model_path)
 
         if model:
-            # Almacenar en caché de producción
-            _production_model_cache = {
+            # Store in production cache
+            _PRODUCTION_MODEL_CACHE = {
                 "name": production_model_name,
                 "path": production_model_path,
                 "model": model,
@@ -131,7 +134,7 @@ def _get_production_model(production_model_name):
             )
             return model
 
-    # Si no existe localmente y MODEL_TARGET=gcs, intentar descargarlo
+    # If it doesn't exist locally and MODEL_TARGET=gcs, try to download it
     if MODEL_TARGET == "gcs":
         print(
             Fore.YELLOW
@@ -140,17 +143,17 @@ def _get_production_model(production_model_name):
         )
         print(Fore.BLUE + "🔍 Buscando en GCS..." + Style.RESET_ALL)
 
-        # Buscar específicamente este modelo en GCS
+        # Search specifically for this model in GCS
         model = _download_specific_model_from_gcs(production_model_name)
         if model:
-            _production_model_cache = {
+            _PRODUCTION_MODEL_CACHE = {
                 "name": production_model_name,
                 "path": f"gcs:{production_model_name}",
                 "model": model,
             }
             return model
 
-    # Si no se encuentra el modelo de producción, fallback al método normal
+    # If production model not found, fallback to normal method
     print(
         Fore.YELLOW
         + f"⚠️  Modelo de producción '{production_model_name}' no encontrado"
@@ -165,10 +168,8 @@ def _get_production_model(production_model_name):
 
 
 def _get_latest_model():
-    """
-    Obtiene el modelo más reciente (método original)
-    """
-    global _cached_model, _cached_model_path
+    """Get the most recent model (original method)."""
+    global _CACHED_MODEL, _CACHED_MODEL_PATH
 
     from coffeedd.ml_logic.registry_ml import find_latest_model_by_architecture
     from coffeedd.params import LOCAL_REGISTRY_PATH, MODEL_ARCHITECTURE
@@ -179,29 +180,29 @@ def _get_latest_model():
         models_base_dir, MODEL_ARCHITECTURE.lower()
     )
 
-    # Si no hay modelo en disco, verificar GCS si es el target
+    # If no model on disk, check GCS if it's the target
     if latest_model_path is None and MODEL_TARGET == "gcs":
         print(Fore.BLUE + "🔍 Verificando modelo en GCS..." + Style.RESET_ALL)
-        # Forzar carga desde GCS (esto actualizará el caché local)
-        _cached_model = load_model()
-        _cached_model_path = "gcs_loaded"  # Marcar como cargado desde GCS
-        return _cached_model
+        # Force load from GCS (this will update local cache)
+        _CACHED_MODEL = load_model()
+        _CACHED_MODEL_PATH = "gcs_loaded"  # Mark as loaded from GCS
+        return _CACHED_MODEL
 
-    # Si no hay modelo disponible
+    # If no model available
     if latest_model_path is None:
         print(Fore.YELLOW + "⚠️  No hay modelo disponible" + Style.RESET_ALL)
-        _cached_model = None
-        _cached_model_path = None
+        _CACHED_MODEL = None
+        _CACHED_MODEL_PATH = None
         return None
 
-    # Si ya tenemos el modelo en caché y la ruta no ha cambiado
-    if _cached_model is not None and _cached_model_path == latest_model_path:
+    # If we already have the model in cache and path hasn't changed
+    if _CACHED_MODEL is not None and _CACHED_MODEL_PATH == latest_model_path:
         print(Fore.GREEN + "⚡ Usando modelo desde caché en memoria" + Style.RESET_ALL)
-        return _cached_model
+        return _CACHED_MODEL
 
-    # Si hay un modelo más reciente o no tenemos caché
-    if _cached_model_path != latest_model_path:
-        if _cached_model_path is not None:
+    # If there's a newer model or we don't have cache
+    if _CACHED_MODEL_PATH != latest_model_path:
+        if _CACHED_MODEL_PATH is not None:
             print(
                 Fore.BLUE
                 + "🔄 Modelo actualizado detectado, recargando caché..."
@@ -210,26 +211,25 @@ def _get_latest_model():
         else:
             print(Fore.BLUE + "🔄 Cargando modelo en caché..." + Style.RESET_ALL)
 
-        # Cargar el modelo
-        _cached_model = load_model()
-        _cached_model_path = latest_model_path
+        # Load the model
+        _CACHED_MODEL = load_model()
+        _CACHED_MODEL_PATH = latest_model_path
 
-        if _cached_model is not None:
+        if _CACHED_MODEL is not None:
             print(
                 Fore.GREEN + "✅ Modelo cargado y almacenado en caché" + Style.RESET_ALL
             )
 
-        return _cached_model
+        return _CACHED_MODEL
 
-    return _cached_model
+    return _CACHED_MODEL
 
 
 def _download_specific_model_from_gcs(model_name):
-    """
-    Descarga un modelo específico desde GCS sin buscar todos los modelos
+    """Download a specific model from GCS without searching all models.
 
     Args:
-        model_name: Nombre del modelo a descargar
+        model_name: Name of the model to download.
     """
     try:
         from google.cloud import storage
@@ -239,7 +239,7 @@ def _download_specific_model_from_gcs(model_name):
         client = storage.Client()
         bucket = client.bucket(BUCKET_NAME)
 
-        # Construir la ruta en GCS
+        # Build GCS path
         gcs_path = f"models/{MODEL_ARCHITECTURE.lower()}/{model_name}"
         blob = bucket.blob(gcs_path)
 
@@ -251,13 +251,13 @@ def _download_specific_model_from_gcs(model_name):
             )
             return None
 
-        # Crear directorio local
+        # Create local directory
         architecture_dir = os.path.join(
             LOCAL_REGISTRY_PATH, "models", MODEL_ARCHITECTURE.lower()
         )
         os.makedirs(architecture_dir, exist_ok=True)
 
-        # Descargar
+        # Download
         local_path = os.path.join(architecture_dir, model_name)
         print(
             Fore.BLUE
@@ -266,7 +266,7 @@ def _download_specific_model_from_gcs(model_name):
         )
         blob.download_to_filename(local_path)
 
-        # Cargar el modelo descargado
+        # Load the downloaded model
         from coffeedd.ml_logic.registry_ml import load_specific_model
 
         model = load_specific_model(local_path)
@@ -288,15 +288,15 @@ def _download_specific_model_from_gcs(model_name):
 
 
 def clear_model_cache():
-    """Limpia el caché del modelo (útil después de entrenar un nuevo modelo)"""
-    global _cached_model, _cached_model_path
-    _cached_model = None
-    _cached_model_path = None
+    """Clear the model cache (useful after training a new model)."""
+    global _CACHED_MODEL, _CACHED_MODEL_PATH
+    _CACHED_MODEL = None
+    _CACHED_MODEL_PATH = None
     print(Fore.BLUE + "🧹 Caché del modelo limpiado" + Style.RESET_ALL)
 
 
 def warm_model_cache():
-    """Precalienta el caché cargando el modelo en memoria"""
+    """Preload the model cache by loading the model into memory."""
     print(Fore.CYAN + "🔥 Precalentando caché del modelo..." + Style.RESET_ALL)
     model = get_cached_model()
     if model is not None:
@@ -312,22 +312,22 @@ def warm_model_cache():
 
 
 def get_cache_status():
-    """Obtiene el estado actual del caché"""
-    global _cached_model, _cached_model_path
+    """Get the current cache status."""
+    global _CACHED_MODEL, _CACHED_MODEL_PATH
 
     model_architecture = None
-    if _cached_model:
+    if _CACHED_MODEL:
         try:
             from coffeedd.ml_logic.registry_ml import detect_model_architecture
 
-            model_architecture = detect_model_architecture(_cached_model.layers)
+            model_architecture = detect_model_architecture(_CACHED_MODEL.layers)
         except:
             model_architecture = "unknown"
 
     status = {
-        "has_cached_model": _cached_model is not None,
-        "cached_model_path": _cached_model_path,
-        "model_layers": len(_cached_model.layers) if _cached_model else None,
+        "has_cached_model": _CACHED_MODEL is not None,
+        "cached_model_path": _CACHED_MODEL_PATH,
+        "model_layers": len(_CACHED_MODEL.layers) if _CACHED_MODEL else None,
         "model_architecture": model_architecture,
     }
 
@@ -349,7 +349,7 @@ def train(metrics_viz=True, test_mode=False):
         )
     )
 
-    # Crear datasets de TensorFlow
+    # Create TensorFlow datasets
     train_dataset = create_tf_dataset(
         train_paths, train_labels, BATCH_SIZE, is_training=True, augment=True
     )
@@ -366,8 +366,8 @@ def train(metrics_viz=True, test_mode=False):
         train_labels=train_labels,
     )
 
-    # Entrenar el modelo usando `model.py`
-    # Cargar o inicializar modelo
+    # Train the model using `model.py`
+    # Load or initialize model
     try:
         model = get_cached_model()
         if model is not None:
@@ -382,7 +382,7 @@ def train(metrics_viz=True, test_mode=False):
                 + "⚠️  No hay modelo existente, creando uno nuevo..."
                 + Style.RESET_ALL
             )
-            model = initialize_model(train_labels)
+            model = initialize_model()
     except Exception as e:
         print(
             Fore.YELLOW
@@ -390,7 +390,7 @@ def train(metrics_viz=True, test_mode=False):
             + Style.RESET_ALL
         )
         print(Fore.BLUE + "🔄 Creando modelo nuevo..." + Style.RESET_ALL)
-        model = initialize_model(train_labels)
+        model = initialize_model()
 
     model = compile_model(model)
 
@@ -418,9 +418,7 @@ def train(metrics_viz=True, test_mode=False):
         + Style.RESET_ALL
     )
 
-    # ==========================================
-    # NUEVO: VISUALIZACIONES DE MÉTRICAS DE ENTRENAMIENTO (HISTORIAL COMBINADO)
-    # ==========================================
+    # Training metrics visualizations (combined history)
     if metrics_viz:
         training_viz_metrics = {}
         convergence_metrics = {}
@@ -432,7 +430,7 @@ def train(metrics_viz=True, test_mode=False):
 
             model_name = MODEL_NAME
 
-            # Generar visualizaciones de métricas de entrenamiento
+            # Generate training metrics visualizations
             training_viz_metrics = plot_training_metrics_combined(
                 combined_history=history,
                 model_name=model_name,
@@ -442,14 +440,14 @@ def train(metrics_viz=True, test_mode=False):
                 verbose=True,
             )
 
-            # Análisis de convergencia del entrenamiento
+            # Training convergence analysis
             convergence_metrics = analyze_training_convergence_combined(
                 combined_history=history, verbose=True
             )
             print(f"     - Visualización entrenamiento: {len(training_viz_metrics)}")
             print(f"     - Convergencia: {len(convergence_metrics)}")
 
-            # Información sobre archivos generados
+            # Information about generated files
             files_generated = []
 
             if training_viz_metrics:
@@ -475,9 +473,9 @@ def train(metrics_viz=True, test_mode=False):
         fine_tune=FINE_TUNE,
     )
 
-    # Guardar resultados y modelo entrenado si no es modo test
+    # Save results and trained model if not in test mode
     if not test_mode:
-        # Combinar métricas manejando duplicados (convergence_metrics tiene prioridad)
+        # Combine metrics handling duplicates (convergence_metrics takes priority)
         combined_metrics = training_viz_metrics.copy()
         combined_metrics.update(convergence_metrics)
 
@@ -487,10 +485,10 @@ def train(metrics_viz=True, test_mode=False):
         # Save model weight on the hard drive (and optionally on GCS too!)
         save_model(model=model)
 
-        # Limpiar caché después de guardar nuevo modelo
+        # Clear cache after saving new model
         clear_model_cache()
 
-        # El ultimo modelo debe ser movido a "Staging" en MLflow si se usa MLflow
+        # The latest model should be moved to "Staging" in MLflow if MLflow is used
         if MODEL_TARGET == "mlflow":
             mlflow_transition_model(current_stage="None", new_stage="Staging")
 
@@ -503,35 +501,35 @@ def train(metrics_viz=True, test_mode=False):
 
 @mlflow_run
 def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
-    """
-    Evalúa el modelo entrenado en el test set y genera métricas detalladas
+    """Evaluate the trained model on test set and generate detailed metrics.
 
     Args:
-        combined_history: History combinado de train_model() (opcional)
+        confusion_matrix_viz: Whether to generate confusion matrix visualization.
+        false_negatives_analysis: Whether to perform false negatives analysis.
     """
     print(Fore.MAGENTA + "\n🧪 Empezando evaluación del modelo... 🧪" + Style.RESET_ALL)
 
-    # Cargar el modelo entrenado
+    # Load the trained model
     model = get_cached_model()
     assert model is not None, "Modelo no encontrado. Entrena el modelo primero."
 
     print(f"🚀 Cargando datos de test... con {SAMPLE_NAME}")
 
-    # Cargar datasets (solo necesitamos test)
+    # Load datasets (we only need test)
     (train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels) = (
         create_dataset_from_directory(
             LOCAL_DATA_PATH, CLASS_NAMES, sample_size=SAMPLE_SIZE
         )
     )
 
-    # Crear dataset de test
+    # Create test dataset
     test_dataset = create_tf_dataset(
         test_paths, test_labels, BATCH_SIZE, is_training=False, augment=False
     )
 
     print("\n✅ Dataset de test creado exitosamente")
 
-    # Constantes
+    # Constants
     model_name = MODEL_NAME
     sample_name = SAMPLE_NAME
 
@@ -539,7 +537,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     print(Fore.CYAN + "🧪 EVALUACIÓN FINAL EN TEST SET" + Style.RESET_ALL)
     print("=" * 60)
 
-    # Evaluar en test
+    # Evaluate on test
     print(Fore.YELLOW + "📊 Calculando métricas en test set..." + Style.RESET_ALL)
     test_results = model.evaluate(test_dataset, verbose=1)
 
@@ -552,18 +550,18 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     print(f"   • Test Accuracy: {test_accuracy:.4f}")
     print(f"   • Test Recall: {test_recall:.4f}")
 
-    # Predecir en test
+    # Predict on test
     print(f"\n{Fore.YELLOW}🔮 Generando predicciones...{Style.RESET_ALL}")
     y_pred_test = model.predict(test_dataset, verbose=1)
     y_pred_test_classes = np.argmax(y_pred_test, axis=1)
 
-    # Identificar clases presentes en test
+    # Identify classes present in test
     unique_test_classes = np.unique(test_labels)
     print(
         f"\n{Fore.BLUE}🏷️  Clases presentes en test set: {unique_test_classes}{Style.RESET_ALL}"
     )
 
-    # Verificar si todas las clases están presentes
+    # Check if all classes are present
     missing_classes = set(range(NUM_CLASSES)) - set(unique_test_classes)
     if missing_classes:
         missing_class_names = [CLASS_NAMES[i] for i in missing_classes]
@@ -576,9 +574,9 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     print(Fore.CYAN + "📊 CLASSIFICATION REPORT" + Style.RESET_ALL)
     print("=" * 60)
 
-    # Especificar solo las clases presentes (recomendado para muestras pequeñas)
+    # Specify only present classes (recommended for small samples)
     if len(unique_test_classes) < NUM_CLASSES:
-        # Usar solo nombres de clases presentes
+        # Use only names of present classes
         target_names_present = [CLASS_NAMES[i] for i in unique_test_classes]
         classification_rep = classification_report(
             test_labels,
@@ -592,29 +590,29 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
             f"\n{Fore.YELLOW}⚠️  Nota: Solo se muestran las {len(unique_test_classes)} clases presentes en el test set.{Style.RESET_ALL}"
         )
     else:
-        # Todas las clases presentes, usar reporte completo
+        # All classes present, use complete report
         classification_rep = classification_report(
             test_labels, y_pred_test_classes, target_names=CLASS_NAMES, digits=4
         )
         print(classification_rep)
 
     if confusion_matrix_viz:
-        # Matriz de confusión
+        # Confusion matrix
         print(f"\n{Fore.YELLOW}📈 Generando matriz de confusión...{Style.RESET_ALL}")
         cm = confusion_matrix(
             test_labels, y_pred_test_classes, labels=unique_test_classes
         )
 
-        # Usar solo nombres de clases presentes para los ejes
+        # Use only names of present classes for axes
         axis_labels = [CLASS_NAMES[i] for i in unique_test_classes]
 
-        # Crear directorio de modelos si no existe
+        # Create models directory if it doesn't exist
         os.makedirs(MODELS_PATH, exist_ok=True)
 
-        # Nombre descriptivo para la matriz de confusión
+        # Descriptive name for confusion matrix
         confusion_matrix_filename = f"{MODELS_PATH}/confusion_matrix_{model_name}.png"
 
-        # Crear la matriz de confusión
+        # Create the confusion matrix
         plt.figure(figsize=(12, 10))
         sns.heatmap(
             cm,
@@ -636,15 +634,13 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
         plt.yticks(rotation=0)
         plt.tight_layout()
         plt.savefig(confusion_matrix_filename, dpi=300, bbox_inches="tight")
-        plt.close()  # Cerrar la figura para liberar memoria
+        plt.close()  # Close figure to free memory
 
         print(
             f"{Fore.GREEN}💾 Matriz de confusión guardada: {confusion_matrix_filename}{Style.RESET_ALL}"
         )
 
-    # ==========================================
-    # ANÁLISIS DE FALSOS NEGATIVOS
-    # ==========================================
+    # False negatives analysis
     fn_metrics = {}
     disease_metrics = {}
 
@@ -653,25 +649,23 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
             f"\n{Fore.MAGENTA}🔍 Ejecutando análisis de falsos negativos...{Style.RESET_ALL}"
         )
 
-        # Análisis de falsos negativos por clase
+        # False negatives analysis by class
         fn_metrics = analyze_false_negatives(
             test_labels=test_labels,
             y_pred_test_classes=y_pred_test_classes,
             verbose=True,
         )
 
-        # Análisis de disease recall (detección binaria de enfermedades)
+        # Disease recall analysis (binary disease detection)
         disease_metrics = analyze_disease_recall(
             test_labels=test_labels,
             y_pred_test_classes=y_pred_test_classes,
             verbose=True,
         )
 
-    # ==========================================
-    # GUARDAR RESULTADOS EN MLFLOW
-    # ==========================================
+    # Save results to MLflow
 
-    # Parámetros base
+    # Base parameters
     params = dict(
         context="evaluate",
         training_set_size=SAMPLE_NAME,
@@ -681,16 +675,16 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
         total_classes=NUM_CLASSES,
     )
 
-    # Métricas base del modelo
+    # Base model metrics
     base_metrics = dict(
         test_loss=test_loss, test_accuracy=test_accuracy, test_recall=test_recall
     )
 
-    # Combinar TODAS las métricas para MLflow (solo las que existen)
+    # Combine ALL metrics for MLflow (only existing ones)
     all_metrics = {
-        **base_metrics,  # Métricas básicas de evaluación
-        **fn_metrics,  # Análisis de falsos negativos (vacío si no se ejecutó)
-        **disease_metrics,  # Métricas de disease recall (vacío si no se ejecutó)
+        **base_metrics,  # Basic evaluation metrics
+        **fn_metrics,  # False negatives analysis (empty if not executed)
+        **disease_metrics,  # Disease recall metrics (empty if not executed)
     }
 
     print(f"\n{Fore.CYAN}📤 Subiendo métricas a MLflow...{Style.RESET_ALL}")
@@ -702,7 +696,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     if disease_metrics:
         print(f"     - Disease detection: {len(disease_metrics)}")
 
-    # Guardar resultados (esto incluirá TODAS las métricas en MLflow)
+    # Save results (this will include ALL metrics in MLflow)
     save_results(params=params, metrics=all_metrics)
 
     print("\n" + "=" * 60)
@@ -714,7 +708,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
     print(f"   • Accuracy final: {test_accuracy:.4f}")
     print(f"   • Recall final: {test_recall:.4f}")
 
-    # Solo mostrar métricas si se calcularon
+    # Only show metrics if they were calculated
     if disease_metrics and "disease_recall" in disease_metrics:
         print(f"   • Disease Recall: {disease_metrics['disease_recall']:.4f}")
     if fn_metrics and "total_false_negatives" in fn_metrics:
@@ -723,7 +717,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
             f"   • Tasa FN global: {fn_metrics.get('overall_false_negative_rate', 0):.1f}%"
         )
 
-    # Información sobre archivos generados
+    # Information about generated files
     files_generated = [confusion_matrix_filename]
 
     print(f"   • Archivos generados: {len(files_generated)}")
@@ -732,7 +726,7 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
 
     print(f"   • Total métricas en MLflow: {len(all_metrics)}")
 
-    # Retornar métricas combinadas
+    # Return combined metrics
     return {
         "test_loss": test_loss,
         "test_accuracy": test_accuracy,
@@ -749,15 +743,14 @@ def evaluate(confusion_matrix_viz=True, false_negatives_analysis=True):
 
 
 def pred(img_source=None) -> dict:
-    """
-    Predicción flexible que acepta:
-    - Ruta de archivo (str): '/path/to/image.jpg'
-    - Bytes (bytes): contenido de imagen
-    - Base64 (str): string base64 codificado
+    """Flexible prediction that accepts:
+    - File path (str): '/path/to/image.jpg'
+    - Bytes (bytes): image content
+    - Base64 (str): base64 encoded string
     """
     print(Fore.MAGENTA + "\n🔎 Empezando predicción... 🔎" + Style.RESET_ALL)
 
-    # Intentar cargar modelo existente
+    # Try to load existing model
     model = get_cached_model()
 
     if model is None:
@@ -777,26 +770,26 @@ def pred(img_source=None) -> dict:
     if img_source is None:
         img_source = input("Ingresa la ruta de la imagen: ").strip()
 
-    # MANEJO ROBUSTO DE DIFERENTES INPUTS
+    # Robust handling of different inputs
     try:
         if isinstance(img_source, bytes):
-            # Caso 1: Bytes directos (desde UploadFile)
+            # Case 1: Direct bytes (from UploadFile)
             img = Image.open(BytesIO(img_source))
 
         elif isinstance(img_source, str):
-            # Caso 2: String - puede ser ruta O base64
+            # Case 2: String - could be path OR base64
 
-            # Detectar si es base64
+            # Detect if it's base64
             if img_source.startswith("data:image"):
-                # Formato: data:image/jpeg;base64,/9j/4AA...
+                # Format: data:image/jpeg;base64,/9j/4AA...
                 img_source = img_source.split(",")[1]
 
-            # Intentar decodificar base64
+            # Try to decode base64
             try:
                 img_data = base64.b64decode(img_source)
                 img = Image.open(BytesIO(img_data))
             except:
-                # Si falla, es una ruta de archivo
+                # If it fails, it's a file path
                 img = Image.open(img_source)
         else:
             raise ValueError(f"Tipo de input no soportado: {type(img_source)}")
@@ -804,12 +797,12 @@ def pred(img_source=None) -> dict:
     except Exception as e:
         raise ValueError(f"Error al cargar imagen: {str(e)}")
 
-    # Preprocesar
+    # Preprocess
     img = img.resize((224, 224)).convert("RGB")
     img_array = np.array(img) / 255.0
     img_array = np.expand_dims(img_array, 0)
 
-    # Predecir
+    # Predict
     predictions = model.predict(img_array)
     predicted_class = np.argmax(predictions)
     probability = float(np.max(predictions))
@@ -831,26 +824,25 @@ def pred(img_source=None) -> dict:
 
 @mlflow_run
 def upload_model_to_gcs(model_version: str = None, dry_run: bool = False):
-    """
-    Sube el último modelo entrenado a Google Cloud Storage
+    """Upload the latest trained model to Google Cloud Storage.
 
     Args:
-        model_version: Versión específica del modelo (si None, usa timestamp)
-        dry_run: Si es True, solo simula la subida sin ejecutarla
+        model_version: Specific model version (if None, uses timestamp).
+        dry_run: If True, only simulates the upload without executing it.
 
     Returns:
-        dict: Información sobre la subida
+        Information about the upload.
     """
     print(Fore.MAGENTA + "\n☁️  Subiendo modelo a GCS... ☁️" + Style.RESET_ALL)
 
     try:
-        # Ejecutar subida
+        # Execute upload
         result = upload_latest_model_to_gcs(
             model_version=model_version, include_metadata=True, dry_run=dry_run
         )
 
         if not dry_run:
-            # Guardar información de la subida en MLflow
+            # Save upload information to MLflow
             save_results(
                 params={
                     "context": "gcs_upload",
@@ -878,11 +870,10 @@ def upload_model_to_gcs(model_version: str = None, dry_run: bool = False):
 
 
 def list_gcs_models(limit: int = 10):
-    """
-    Lista los modelos disponibles en GCS
+    """List available models in GCS.
 
     Args:
-        limit: Número máximo de modelos a mostrar
+        limit: Maximum number of models to show.
     """
     print(Fore.CYAN + "\n📋 Modelos en Google Cloud Storage" + Style.RESET_ALL)
     print("=" * 60)
