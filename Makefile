@@ -141,3 +141,11 @@ docker_build_yolo:
 docker_run_yolo:
 	docker run -p 8000:8000 coffeedd-yolo-api
 
+deploy_yolo_api:
+	gcloud run deploy coffeedd-yolo-api \
+	--image europe-southwest1-docker.pkg.dev/coffe-disease-detection-477521/coffee-api-repo/coffeedd-yolo-api \
+	--region europe-southwest1 \
+	--platform managed \
+	--memory 2Gi \
+	--allow-unauthenticated \
+	--env-vars-file .env.yolo.yaml
