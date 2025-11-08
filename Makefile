@@ -135,3 +135,9 @@ install_yolo:
 run_yolo_api:
 	uvicorn coffeedd.api.api_yolo:app --reload
 
+docker_build_yolo:
+	docker build -f Dockerfile.yolo -t coffeedd-yolo-api .
+
+docker_run_yolo:
+	docker run -p 8000:8000 coffeedd-yolo-api
+
