@@ -235,7 +235,9 @@ def analyze_false_negatives(test_labels, y_pred_test_classes, verbose=True):
             total_disease_samples += total_cases
 
             if verbose:
-                print(f"\n{Fore.RED}🔴 Total Falsos Negativos: {total_fn}{Style.RESET_ALL}")
+                print(
+                    f"\n{Fore.RED}🔴 Total Falsos Negativos: {total_fn}{Style.RESET_ALL}"
+                )
                 print(
                     f"{Fore.BLUE}📊 Total casos de enfermedad en test: {total_disease_samples}{Style.RESET_ALL}"
                 )

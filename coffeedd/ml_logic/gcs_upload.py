@@ -3,11 +3,11 @@ Funciones para subir modelos a Google Cloud Storage
 """
 
 import os
+import json
 from pathlib import Path
 from datetime import datetime
 from google.cloud import storage
 from colorama import Fore, Style
-import json
 
 from coffeedd.params import (
     GCP_PROJECT,

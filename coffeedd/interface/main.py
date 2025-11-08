@@ -3,6 +3,7 @@
 - Evaluation
 - Prediction
 """
+
 from io import BytesIO
 import base64
 import os
@@ -44,7 +45,7 @@ from coffeedd.params import (
     MODEL_NAME,
     PRODUCTION_MODEL,
     LOCAL_REGISTRY_PATH,
-    MODEL_ARCHITECTURE
+    MODEL_ARCHITECTURE,
 )
 
 # Global model cache system
