@@ -3,25 +3,28 @@ from coffeedd.ml_logic.data_analysis import find_rarest_disease_class
 
 from coffeedd.params import LOCAL_DATA_PATH, CLASS_NAMES, NUM_CLASSES
 
+
 def get_class_weights(
     train_labels,
 ):
     ## Calcular class weights dinámicos basados en distribución real del train set
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("⚖️  CALCULANDO CLASS WEIGHTS DINÁMICOS")
-    print("="*60)
+    print("=" * 60)
 
     # Encontrar la clase más rara con análisis de desequilibrio
-    rarest_disease, rarest_count, is_extremely_rare, class_stats = find_rarest_disease_class(
-        LOCAL_DATA_PATH, CLASS_NAMES, extreme_threshold=0.5
+    rarest_disease, rarest_count, is_extremely_rare, class_stats = (
+        find_rarest_disease_class(LOCAL_DATA_PATH, CLASS_NAMES, extreme_threshold=0.5)
     )
 
     if rarest_disease:
         print("\n📈 Análisis de distribución de clases en dataset completo:")
-        for class_name, count in class_stats['all_counts'].items():
-            percentage = (count / class_stats['avg_count']) * 100
+        for class_name, count in class_stats["all_counts"].items():
+            percentage = (count / class_stats["avg_count"]) * 100
             emoji = "⚠️" if class_name == rarest_disease else "🦠"
-            print(f"  {emoji} {class_name:15s}: {count:5d} muestras ({percentage:5.1f}% vs promedio)")
+            print(
+                f"  {emoji} {class_name:15s}: {count:5d} muestras ({percentage:5.1f}% vs promedio)"
+            )
 
         print(f"\n  📉 Clase más pequeña: {rarest_disease} ({rarest_count} muestras)")
         print(f"  📊 Promedio por clase: {class_stats['avg_count']:.1f} muestras")
@@ -29,9 +32,13 @@ def get_class_weights(
         print(f"  🔢 Ratio vs máxima: {class_stats['ratio_vs_max']:.2f}")
 
         if is_extremely_rare:
-            print(f"  🚨 DESEQUILIBRIO EXTREMO detectado - Activando boost especial para {rarest_disease}")
+            print(
+                f"  🚨 DESEQUILIBRIO EXTREMO detectado - Activando boost especial para {rarest_disease}"
+            )
         else:
-            print("  ✅ Distribución relativamente balanceada - No se requiere boost especial")
+            print(
+                "  ✅ Distribución relativamente balanceada - No se requiere boost especial"
+            )
 
     # Calcular class weights con distribución actual del train set
     from sklearn.utils.class_weight import compute_class_weight
@@ -43,9 +50,7 @@ def get_class_weights(
     if len(unique_classes) > 1:
         # Usar sklearn para calcular pesos balanceados
         computed_weights = compute_class_weight(
-            'balanced',
-            classes=unique_classes,
-            y=train_labels
+            "balanced", classes=unique_classes, y=train_labels
         )
 
         for i, class_idx in enumerate(unique_classes):
@@ -56,7 +61,9 @@ def get_class_weights(
         if idx in class_weights_dict:
             count = np.sum(train_labels == idx)
             percentage = (count / len(train_labels)) * 100
-            print(f"  {CLASS_NAMES[idx]:15s}: {count:4d} ({percentage:5.1f}%) - peso: {class_weights_dict[idx]:.3f}")
+            print(
+                f"  {CLASS_NAMES[idx]:15s}: {count:4d} ({percentage:5.1f}%) - peso: {class_weights_dict[idx]:.3f}"
+            )
 
     # Ajustes manuales para priorizar detección de enfermedades
     class_weights = {}
@@ -72,7 +79,7 @@ def get_class_weights(
             weight = class_weights_dict[idx]
 
             # Con muestras pequeñas, usar ajustes MUY conservadores
-            if class_name == 'healthy':
+            if class_name == "healthy":
                 # PENALIZAR FUERTEMENTE healthy para evitar falsos negativos
                 if is_small_sample:
                     class_weights[idx] = max(weight * 0.3, 0.1)  # Muy penalizado
@@ -84,8 +91,12 @@ def get_class_weights(
                 if is_small_sample:
                     class_weights[idx] = min(weight * 3.0, 8.0)
                 else:
-                    class_weights[idx] = weight * 2.0  # Boost fuerte para desequilibrio extremo
-                print(f"  🚨 Aplicando boost extremo a {class_name} (desequilibrio {class_stats['ratio_vs_avg']:.2f})")
+                    class_weights[idx] = (
+                        weight * 2.0
+                    )  # Boost fuerte para desequilibrio extremo
+                print(
+                    f"  🚨 Aplicando boost extremo a {class_name} (desequilibrio {class_stats['ratio_vs_avg']:.2f})"
+                )
 
             else:
                 # BOOST MODERADO para otras enfermedades (sin boost especial)
@@ -95,7 +106,7 @@ def get_class_weights(
                     class_weights[idx] = weight * 1  # Reducido de 1.2 luego 1.1
         else:
             # Clases ausentes - peso alto para enfermedades
-            if class_name == 'healthy':
+            if class_name == "healthy":
                 class_weights[idx] = 0.5 if is_small_sample else 0.8
             else:
                 class_weights[idx] = 5.0 if is_small_sample else 8.0
@@ -105,7 +116,7 @@ def get_class_weights(
         status = "✓" if idx in class_weights_dict else "⚠️ (ausente)"
 
         # Emojis inteligentes
-        if class_name == 'healthy':
+        if class_name == "healthy":
             emoji = "🌱"
             priority_note = "(penalizada)"
         elif class_name == rarest_disease and is_extremely_rare:
@@ -118,7 +129,9 @@ def get_class_weights(
             emoji = "🦠"
             priority_note = ""
 
-        print(f"  {emoji} {class_name:20s}: {class_weights[idx]:6.3f} {status} {priority_note}")
+        print(
+            f"  {emoji} {class_name:20s}: {class_weights[idx]:6.3f} {status} {priority_note}"
+        )
 
     # IMPORTANTE: Convertir class_weights a floats de Python para evitar errores de serialización
     class_weights = {k: float(v) for k, v in class_weights.items()}

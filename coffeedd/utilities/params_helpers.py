@@ -5,11 +5,12 @@ def auto_type(value):
         return None
     value_str = str(value).strip()
     try:
-        if '.' not in value_str:
+        if "." not in value_str:
             return int(value_str)
         return float(value_str)
     except ValueError:
         return value_str
+
 
 # Determinar epochs basado en SAMPLE_SIZE
 def get_epochs_for_sample_size(sample_size):
@@ -36,14 +37,16 @@ def get_epochs_for_sample_size(sample_size):
     """
 
     # Casos especiales
-    if sample_size == 'full' or sample_size is None:
+    if sample_size == "full" or sample_size is None:
         return 10  # ⬇️ Reducido de 15 a 10 epochs para PREVENIR overfitting
-    elif sample_size == 'half':
+    elif sample_size == "half":
         return 12  # Dataset mediano-grande (30K) - epochs moderados
 
     # Validar tipo
     if not isinstance(sample_size, (int, float)):
-        print(f"⚠️  SAMPLE_SIZE debe ser int, float, 'full' o 'half', recibido: {type(sample_size).__name__}")
+        print(
+            f"⚠️  SAMPLE_SIZE debe ser int, float, 'full' o 'half', recibido: {type(sample_size).__name__}"
+        )
         return 60
 
     # Si es float (porcentaje)
@@ -58,7 +61,9 @@ def get_epochs_for_sample_size(sample_size):
                 return 60
         else:
             # Float fuera de rango válido
-            print(f"⚠️  SAMPLE_SIZE float debe estar entre 0 y 1, recibido: {sample_size}")
+            print(
+                f"⚠️  SAMPLE_SIZE float debe estar entre 0 y 1, recibido: {sample_size}"
+            )
             return 60
 
     # Si es int (número absoluto)
@@ -79,6 +84,7 @@ def get_epochs_for_sample_size(sample_size):
 
     # Fallback (no debería llegar aquí)
     return 60
+
 
 def get_sample_name(sample_size):
     """
@@ -109,25 +115,26 @@ def get_sample_name(sample_size):
         '1000'
     """
     # Casos None o 'full'
-    if sample_size is None or sample_size == 'full':
-        return 'full'
+    if sample_size is None or sample_size == "full":
+        return "full"
 
     # Caso especial 'half'
-    if sample_size == 'half':
-        return 'half'
+    if sample_size == "half":
+        return "half"
 
     # Si es float (porcentaje), convertir a formato "XXpct"
     if isinstance(sample_size, float):
         # Asegurar que el porcentaje esté entre 0 y 1
         if 0 < sample_size <= 1:
             percentage = int(sample_size * 100)
-            return f'{percentage}pct'
+            return f"{percentage}pct"
         else:
             # Si el float es mayor a 1, tratarlo como número absoluto
             return str(int(sample_size))
 
     # Si es int o cualquier otro tipo, convertir a string
     return str(sample_size)
+
 
 def get_model_name(base_name, sample_name, epochs):
     """

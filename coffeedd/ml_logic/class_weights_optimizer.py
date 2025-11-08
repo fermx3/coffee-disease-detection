@@ -26,18 +26,20 @@ causando confusión entre clases y recall bajo para plantas sanas.
 📈 WEIGHTS RECOMENDADOS BASADOS EN ANÁLISIS:
 """
 
+
 def get_balanced_class_weights():
     """
     Class weights balanceados para reducir confusión entre clases.
     Estrategia conservadora para evitar sesgo extremo.
     """
     return {
-        0: 1.0,   # cerscospora - peso neutro
-        1: 1.1,   # healthy - ligero boost para mejorar detección
-        2: 1.0,   # leaf_rust - peso neutro
-        3: 1.2,   # miner - boost para clase minoritaria
-        4: 1.1    # phoma - ligero boost
+        0: 1.0,  # cerscospora - peso neutro
+        1: 1.1,  # healthy - ligero boost para mejorar detección
+        2: 1.0,  # leaf_rust - peso neutro
+        3: 1.2,  # miner - boost para clase minoritaria
+        4: 1.1,  # phoma - ligero boost
     }
+
 
 def get_healthy_focused_weights():
     """
@@ -45,12 +47,13 @@ def get_healthy_focused_weights():
     Usar si el modelo confunde sanas con enfermas frecuentemente.
     """
     return {
-        0: 0.9,   # cerscospora - reducir peso
-        1: 1.3,   # healthy - boost significativo
-        2: 0.9,   # leaf_rust - reducir peso
-        3: 1.1,   # miner - peso moderado
-        4: 0.9    # phoma - reducir peso
+        0: 0.9,  # cerscospora - reducir peso
+        1: 1.3,  # healthy - boost significativo
+        2: 0.9,  # leaf_rust - reducir peso
+        3: 1.1,  # miner - peso moderado
+        4: 0.9,  # phoma - reducir peso
     }
+
 
 def get_disease_balanced_weights():
     """
@@ -58,12 +61,13 @@ def get_disease_balanced_weights():
     Basado en distribución típica de dataset de café.
     """
     return {
-        0: 1.2,   # cerscospora - boost moderado
-        1: 0.8,   # healthy - peso reducido (clase mayoritaria)
-        2: 1.3,   # leaf_rust - boost para detección
-        3: 1.5,   # miner - boost alto (clase minoritaria)
-        4: 1.4    # phoma - boost moderado-alto
+        0: 1.2,  # cerscospora - boost moderado
+        1: 0.8,  # healthy - peso reducido (clase mayoritaria)
+        2: 1.3,  # leaf_rust - boost para detección
+        3: 1.5,  # miner - boost alto (clase minoritaria)
+        4: 1.4,  # phoma - boost moderado-alto
     }
+
 
 def get_conservative_weights():
     """
@@ -71,12 +75,13 @@ def get_conservative_weights():
     Mínimas diferencias entre clases.
     """
     return {
-        0: 1.0,   # cerscospora
+        0: 1.0,  # cerscospora
         1: 1.05,  # healthy - boost mínimo
-        2: 1.0,   # leaf_rust
-        3: 1.1,   # miner - boost mínimo
-        4: 1.05   # phoma - boost mínimo
+        2: 1.0,  # leaf_rust
+        3: 1.1,  # miner - boost mínimo
+        4: 1.05,  # phoma - boost mínimo
     }
+
 
 def analyze_class_distribution(train_labels):
     """
@@ -95,9 +100,9 @@ def analyze_class_distribution(train_labels):
     total_samples = len(train_labels)
 
     print("\n📊 ANÁLISIS DE DISTRIBUCIÓN DE CLASES:")
-    print("="*50)
+    print("=" * 50)
 
-    class_names = ['cerscospora', 'healthy', 'leaf_rust', 'miner', 'phoma']
+    class_names = ["cerscospora", "healthy", "leaf_rust", "miner", "phoma"]
 
     for i, (class_idx, count) in enumerate(zip(unique, counts)):
         percentage = (count / total_samples) * 100
@@ -107,7 +112,7 @@ def analyze_class_distribution(train_labels):
     max_count = max(counts)
     weights = {}
 
-    print(f"\n🎯 WEIGHTS CALCULADOS (Frecuencia Inversa):")
+    print("\n🎯 WEIGHTS CALCULADOS (Frecuencia Inversa):")
     for class_idx, count in zip(unique, counts):
         weight = max_count / count
         # Suavizar para evitar weights extremos
@@ -117,6 +122,7 @@ def analyze_class_distribution(train_labels):
         print(f"  {class_names[class_idx]:15s}: {weight:.2f}")
 
     return weights
+
 
 def recommend_weights_for_efficientnet(train_labels, validation_metrics=None):
     """
@@ -134,46 +140,47 @@ def recommend_weights_for_efficientnet(train_labels, validation_metrics=None):
     """
 
     print("\n🚀 RECOMENDACIÓN DE CLASS WEIGHTS PARA EFFICIENTNET")
-    print("="*60)
+    print("=" * 60)
 
     # Analizar distribución
     calculated_weights = analyze_class_distribution(train_labels)
 
     # Ajustar basado en problemas conocidos del EfficientNet
     if validation_metrics:
-        print(f"\n📈 Métricas previas disponibles:")
+        print("\n📈 Métricas previas disponibles:")
         for metric, value in validation_metrics.items():
             print(f"  {metric}: {value:.4f}")
 
-    print(f"\n💡 RECOMENDACIONES:")
-    print(f"1. 🟢 CONSERVADOR (empezar aquí):")
+    print("\n💡 RECOMENDACIONES:")
+    print("1. 🟢 CONSERVADOR (empezar aquí):")
     conservative = get_conservative_weights()
     for i, (k, v) in enumerate(conservative.items()):
-        class_name = ['cerscospora', 'healthy', 'leaf_rust', 'miner', 'phoma'][k]
+        class_name = ["cerscospora", "healthy", "leaf_rust", "miner", "phoma"][k]
         print(f"     {class_name}: {v}")
 
-    print(f"\n2. 🔄 BALANCEADO (si conservador no funciona):")
+    print("\n2. 🔄 BALANCEADO (si conservador no funciona):")
     balanced = get_balanced_class_weights()
     for i, (k, v) in enumerate(balanced.items()):
-        class_name = ['cerscospora', 'healthy', 'leaf_rust', 'miner', 'phoma'][k]
+        class_name = ["cerscospora", "healthy", "leaf_rust", "miner", "phoma"][k]
         print(f"     {class_name}: {v}")
 
-    print(f"\n3. 🎯 CALCULADO (basado en frecuencia):")
+    print("\n3. 🎯 CALCULADO (basado en frecuencia):")
     for i, (k, v) in enumerate(calculated_weights.items()):
-        class_name = ['cerscospora', 'healthy', 'leaf_rust', 'miner', 'phoma'][k]
+        class_name = ["cerscospora", "healthy", "leaf_rust", "miner", "phoma"][k]
         print(f"     {class_name}: {v}")
 
-    print(f"\n🔧 ESTRATEGIA RECOMENDADA:")
-    print(f"  1. Empezar con CONSERVADOR")
-    print(f"  2. Si confunde healthy → usar healthy_focused_weights()")
-    print(f"  3. Si recall bajo en enfermedades → usar CALCULADO")
-    print(f"  4. Monitorear confusion matrix cada 5 epochs")
+    print("\n🔧 ESTRATEGIA RECOMENDADA:")
+    print("  1. Empezar con CONSERVADOR")
+    print("  2. Si confunde healthy → usar healthy_focused_weights()")
+    print("  3. Si recall bajo en enfermedades → usar CALCULADO")
+    print("  4. Monitorear confusion matrix cada 5 epochs")
 
     return conservative  # Devolver weights conservadores por defecto
 
+
 if __name__ == "__main__":
     print("🎯 CLASS WEIGHTS OPTIMIZER FOR EFFICIENTNET")
-    print("="*50)
+    print("=" * 50)
     print("\nEste archivo contiene estrategias optimizadas de class weights")
     print("para resolver problemas de confusión entre clases en EfficientNet.")
     print("\nUso recomendado:")

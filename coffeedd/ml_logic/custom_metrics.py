@@ -1,16 +1,21 @@
 import tensorflow as tf
 import keras
 
+
 class DiseaseRecallMetric(keras.metrics.Metric):
     """
     Metrica personalizada para calcular el recall específico para clases de enfermedades,
     excluyendo la clase 'healthy'.
     """
 
-    def __init__(self, name='disease_recall', **kwargs):
+    def __init__(self, name="disease_recall", **kwargs):
         super().__init__(name=name, **kwargs)
-        self.total_disease_samples = self.add_weight(name='total_disease_samples', initializer='zeros')
-        self.correct_disease_predictions = self.add_weight(name='correct_disease_predictions', initializer='zeros')
+        self.total_disease_samples = self.add_weight(
+            name="total_disease_samples", initializer="zeros"
+        )
+        self.correct_disease_predictions = self.add_weight(
+            name="correct_disease_predictions", initializer="zeros"
+        )
 
     def update_state(self, y_true, y_pred, sample_weight=None):
         # Convertir one-hot a índices
@@ -31,7 +36,9 @@ class DiseaseRecallMetric(keras.metrics.Metric):
         self.correct_disease_predictions.assign_add(correct_disease_count)
 
     def result(self):
-        return tf.math.divide_no_nan(self.correct_disease_predictions, self.total_disease_samples)
+        return tf.math.divide_no_nan(
+            self.correct_disease_predictions, self.total_disease_samples
+        )
 
     def reset_state(self):
         self.total_disease_samples.assign(0.0)

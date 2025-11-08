@@ -6,14 +6,15 @@ import tensorflow as tf
 from coffeedd.params import NUM_CLASSES
 from coffeedd.ml_logic.preprocessing import parse_image, augment_image
 
+
 def create_dataset_from_directory(
     data_path,
     class_names,
     validation_split=0.15,
     test_split=0.15,
     seed=42,
-    sample_size=None
-    ):
+    sample_size=None,
+):
     """
     Crea datasets de entrenamiento, validación y test de forma eficiente.
     Carga imágenes on-the-fly sin llenar la RAM.
@@ -44,8 +45,11 @@ def create_dataset_from_directory(
             continue
 
         # Obtener todas las imágenes .jpg
-        images = [os.path.join(class_path, f) for f in os.listdir(class_path)
-                  if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+        images = [
+            os.path.join(class_path, f)
+            for f in os.listdir(class_path)
+            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+        ]
 
         image_paths.extend(images)
         labels.extend([class_idx] * len(images))
@@ -57,7 +61,7 @@ def create_dataset_from_directory(
     print(f"\n✅ Total disponible: {total_images} imágenes")
 
     # 2. Aplicar muestreo si se especifica
-    if sample_size is not None and sample_size != 'full':
+    if sample_size is not None and sample_size != "full":
         print("\n🎲 Aplicando muestreo...")
 
         # Convertir a arrays para manipular
@@ -65,7 +69,7 @@ def create_dataset_from_directory(
         labels = np.array(labels)
 
         # Determinar número de imágenes a usar
-        if sample_size == 'half':
+        if sample_size == "half":
             target_size = total_images // 2
         elif float(sample_size) < 1.0:  # Es un float (porcentaje)
             target_size = int(total_images * float(sample_size))
@@ -77,10 +81,11 @@ def create_dataset_from_directory(
 
         if target_size < total_images:
             _, image_paths, _, labels = train_test_split(
-                image_paths, labels,
+                image_paths,
+                labels,
                 test_size=target_size / total_images,
                 stratify=labels,
-                random_state=seed
+                random_state=seed,
             )
 
             print(f"  📉 Reducido de {total_images} a {len(image_paths)} imágenes")
@@ -111,12 +116,12 @@ def create_dataset_from_directory(
     test_labels = labels[:test_size]
 
     # Validation set
-    val_paths = image_paths[test_size:test_size + val_size]
-    val_labels = labels[test_size:test_size + val_size]
+    val_paths = image_paths[test_size : test_size + val_size]
+    val_labels = labels[test_size : test_size + val_size]
 
     # Train set
-    train_paths = image_paths[test_size + val_size:]
-    train_labels = labels[test_size + val_size:]
+    train_paths = image_paths[test_size + val_size :]
+    train_labels = labels[test_size + val_size :]
 
     print("\n📊 División de datos:")
     print(f"  Train: {len(train_paths)} ({len(train_paths)/total_size*100:.1f}%)")
@@ -125,7 +130,11 @@ def create_dataset_from_directory(
 
     # 5. Mostrar distribución por clase en cada set
     print("\n📈 Distribución por clase:")
-    for set_name, set_labels in [('Train', train_labels), ('Val', val_labels), ('Test', test_labels)]:
+    for set_name, set_labels in [
+        ("Train", train_labels),
+        ("Val", val_labels),
+        ("Test", test_labels),
+    ]:
         counts = Counter(set_labels)
         print(f"\n  {set_name}:")
         for class_idx, class_name in enumerate(class_names):
@@ -133,9 +142,16 @@ def create_dataset_from_directory(
             percentage = (count / len(set_labels) * 100) if len(set_labels) > 0 else 0
             print(f"    {class_name:20s}: {count:5d} ({percentage:5.1f}%)")
 
-    return (train_paths, train_labels), (val_paths, val_labels), (test_paths, test_labels)
+    return (
+        (train_paths, train_labels),
+        (val_paths, val_labels),
+        (test_paths, test_labels),
+    )
 
-def create_tf_dataset(image_paths, labels, batch_size, is_training=False, augment=False):
+
+def create_tf_dataset(
+    image_paths, labels, batch_size, is_training=False, augment=False
+):
     """
     Crea un tf.data.Dataset optimizado que carga imágenes on-the-fly
     """
@@ -156,7 +172,7 @@ def create_tf_dataset(image_paths, labels, batch_size, is_training=False, augmen
     # Convertir labels a one-hot
     dataset = dataset.map(
         lambda img, lbl: (img, tf.one_hot(lbl, NUM_CLASSES)),
-        num_parallel_calls=tf.data.AUTOTUNE
+        num_parallel_calls=tf.data.AUTOTUNE,
     )
 
     # Batch

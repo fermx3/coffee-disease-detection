@@ -2,7 +2,6 @@ import tensorflow as tf
 from PIL import Image
 import numpy as np
 import io
-from pathlib import Path
 from keras.utils import load_img, img_to_array
 
 
@@ -127,12 +126,14 @@ def build_tf_dataset(
     ds = ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
     return ds
 
+
 def parse_image(filename, label):
     """Lee y decodifica una imagen desde archivo"""
     image = tf.io.read_file(filename)
     image = tf.image.decode_jpeg(image, channels=3)
     image = tf.cast(image, tf.float32) / 255.0  # Normalizar a [0, 1]
     return image, label
+
 
 def augment_image(image, label):
     """
@@ -151,6 +152,7 @@ def augment_image(image, label):
     image = tf.clip_by_value(image, 0.0, 1.0)
 
     return image, label
+
 
 def preprocess_image(img_source) -> tf.Tensor:
     """

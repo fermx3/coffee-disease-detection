@@ -1,38 +1,55 @@
-import numpy as np
+"""Model initialization, compilation, and training logic for Coffee Disease Detection."""
+
 import time
-
-from colorama import Fore, Style
 from typing import Tuple
-from sklearn.metrics import classification_report, confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-from coffeedd.params import *
-from coffeedd.ml_logic.custom_metrics import DiseaseRecallMetric
-from coffeedd.ml_logic.data_analysis import false_negatives_analysis
-from coffeedd.utilities.results import combine_histories
-from coffeedd.params import MODEL_NAME
-
-# Timing the TF import
-print(Fore.BLUE + "\nLoading TensorFlow..." + Style.RESET_ALL)
-start = time.perf_counter()
 
 from tensorflow import keras
 from keras import Model, layers
 from keras.applications import EfficientNetB0
 from keras.applications.vgg16 import VGG16
 from keras.models import Sequential
+from keras.regularizers import l2
+
+from colorama import Fore, Style
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import classification_report, confusion_matrix
+
+from coffeedd.params import (
+    IMG_SIZE,
+    SAMPLE_SIZE,
+    MODEL_ARCHITECTURE,
+    NUM_CLASSES,
+    MODEL_NAME,
+    LEARNING_RATE,
+    LOCAL_REGISTRY_PATH,
+    SAMPLE_NAME,
+    CLASS_NAMES,
+    EPOCHS,
+    MODELS_PATH,
+)
+from coffeedd.ml_logic.custom_metrics import DiseaseRecallMetric
+from coffeedd.ml_logic.data_analysis import false_negatives_analysis
+from coffeedd.utilities.results import combine_histories
+from coffeedd.utilities.params_helpers import auto_type
+
+print(Fore.BLUE + "\nLoading TensorFlow..." + Style.RESET_ALL)
+start = time.perf_counter()
+
 
 end = time.perf_counter()
 print(f"\n✅ TensorFlow loaded ({round(end - start, 2)}s)")
 
 
-def initialize_model(train_labels: list) -> Model:
-    """Inicializa y devuelve el modelo adecuado según el tamaño del dataset y la arquitectura seleccionada.
+def initialize_model() -> Model:
+    """Initialize and return the appropriate model based on dataset size and selected architecture.
+
     Args:
-        train_labels (list): Lista de etiquetas de entrenamiento.
+        train_labels: List of training labels.
+
     Returns:
-        Model: Modelo Keras compilado listo para entrenar.
+        Compiled Keras model ready for training.
     """
     print(Fore.BLUE + "\n🏗️  Construyendo modelo..." + Style.RESET_ALL)
 
@@ -48,7 +65,7 @@ def initialize_model(train_labels: list) -> Model:
         model_name = "VGG16"
     elif model_architecture == "efficientnet":
         print("🔧 Usando EfficientNetB0 con transfer learning")
-        model, _ = build_efficientnet_model()  # Desempaquetar tupla, solo usar modelo
+        model, _ = build_efficientnet_model()
         model_name = "EfficientNetB0"
     else:
         raise ValueError(f"Arquitectura de modelo no soportada: {model_architecture}")
@@ -58,136 +75,144 @@ def initialize_model(train_labels: list) -> Model:
 
     return model
 
+
 def build_simple_cnn_model():
-    """Modelo CNN simple para datasets pequeños (< 5000 imágenes)"""
+    """Build a simple CNN model for small datasets (< 5000 images)."""
     inputs = keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
 
-    # Data augmentation REALISTA para hojas de café
-    x = layers.RandomFlip("horizontal")(inputs)  # Solo horizontal, NO vertical
-    x = layers.RandomRotation(0.03)(x)  # ±30° (0.08 * 360° ≈ 29°)
-    x = layers.RandomZoom(0.05)(x)  # Zoom moderado (reducido de 0.2)
-    x = layers.RandomContrast(0.05)(x)  # Contraste variable (fotos de campo)
+    # Realistic data augmentation for coffee leaves
+    x = layers.RandomFlip("horizontal")(inputs)
+    x = layers.RandomRotation(0.03)(x)
+    x = layers.RandomZoom(0.05)(x)
+    x = layers.RandomContrast(0.05)(x)
 
-    # Bloque 1
-    x = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(x)
+    # Convolutional block 1
+    x = layers.Conv2D(32, (3, 3), activation="relu", padding="same")(x)
     x = layers.BatchNormalization()(x)
-    x = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(x)
+    x = layers.Conv2D(32, (3, 3), activation="relu", padding="same")(x)
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Dropout(0.1)(x)
 
-    # Bloque 2
-    x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    # Convolutional block 2
+    x = layers.Conv2D(64, (3, 3), activation="relu", padding="same")(x)
     x = layers.BatchNormalization()(x)
-    x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = layers.Conv2D(64, (3, 3), activation="relu", padding="same")(x)
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Dropout(0.15)(x)
 
-    # Bloque 3
-    x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    # Convolutional block 3
+    x = layers.Conv2D(128, (3, 3), activation="relu", padding="same")(x)
     x = layers.BatchNormalization()(x)
-    x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = layers.Conv2D(128, (3, 3), activation="relu", padding="same")(x)
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Dropout(0.2)(x)
 
-    # Bloque 4 (agregado para mejor detección)
-    x = layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    # Convolutional block 4
+    x = layers.Conv2D(256, (3, 3), activation="relu", padding="same")(x)
     x = layers.BatchNormalization()(x)
     x = layers.MaxPooling2D((2, 2))(x)
     x = layers.Dropout(0.25)(x)
 
-    # Classifier optimizado para recall
+    # Classifier optimized for recall
     x = layers.GlobalAveragePooling2D()(x)
-    x = layers.Dense(512, activation='relu')(x)
+    x = layers.Dense(512, activation="relu")(x)
     x = layers.BatchNormalization()(x)
     x = layers.Dropout(0.3)(x)
-    x = layers.Dense(256, activation='relu')(x)
+    x = layers.Dense(256, activation="relu")(x)
     x = layers.Dropout(0.2)(x)
-    outputs = layers.Dense(NUM_CLASSES, activation='softmax')(x)
+    outputs = layers.Dense(NUM_CLASSES, activation="softmax")(x)
 
     cnn_model = keras.Model(inputs, outputs)
     return cnn_model
 
-def build_vgg16_model():
-    """
-    VGG16 ANTI-OVERFITTING optimizado para generalización en producción
 
-    Basado en la configuración exitosa con "half" dataset que demostró
-    mejor rendimiento en producción. Enfoque en:
-    1. Excelente detección sano vs enfermo
-    2. Mejor discriminación entre enfermedades específicas
-    3. Prevención de overfitting con dataset completo
+def build_vgg16_model():
+    """Build VGG16 model with anti-overfitting optimizations for production generalization.
+
+    Based on successful configuration with "half" dataset that demonstrated
+    better production performance. Focus on:
+    1. Excellent healthy vs diseased detection
+    2. Better discrimination between specific diseases
+    3. Preventing overfitting with full dataset
     """
-    from coffeedd.utilities.params_helpers import auto_type
 
     sample_size_typed = auto_type(SAMPLE_SIZE)
 
-    if sample_size_typed is None or sample_size_typed == 'full':
+    if sample_size_typed is None or sample_size_typed == "full":
         is_large_dataset = True
         config_name = "DATASET GRANDE (59K+) - ANTI-OVERFITTING"
-    elif sample_size_typed == 'half':
-        is_large_dataset = True  # Half del dataset (30K) sigue siendo grande
+    elif sample_size_typed == "half":
+        is_large_dataset = True
         config_name = "DATASET GRANDE (half=30K) - ANTI-OVERFITTING"
     elif isinstance(sample_size_typed, (int, float)):
         if isinstance(sample_size_typed, float) and 0 < sample_size_typed <= 1:
-            # Es un porcentaje
+            # Percentage value
             estimated_size = int(sample_size_typed * 59807)
         else:
-            # Es número absoluto de imágenes - SOLO considerar grande si > 10K
+            # Absolute number of images - consider large only if > 10K
             estimated_size = int(sample_size_typed)
 
-        # Threshold más realista: datasets < 10K son PEQUEÑOS
+        # More realistic threshold: datasets < 10K are SMALL
         is_large_dataset = estimated_size >= 10000
-        config_name = f"DATASET {'GRANDE' if is_large_dataset else 'PEQUEÑO'} (~{estimated_size})"
+        config_name = (
+            f"DATASET {'GRANDE' if is_large_dataset else 'PEQUEÑO'} (~{estimated_size})"
+        )
     else:
         is_large_dataset = False
         config_name = "DATASET PEQUEÑO"
 
     print(f"🎯 VGG16 Anti-Overfitting para {config_name}")
 
-    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    base_model = VGG16(weights="imagenet", include_top=False, input_shape=(224, 224, 3))
 
     if is_large_dataset:
-        # CONFIGURACIÓN ANTI-OVERFITTING para dataset grande
+        # Anti-overfitting configuration for large datasets
         print("🛡️  Aplicando configuración ANTI-OVERFITTING para dataset grande...")
 
-        # TRANSFER LEARNING ULTRA-CONSERVADOR
-        # Congelar AÚN MÁS capas que la versión anterior
+        # Ultra-conservative transfer learning - freeze even more layers
         for i, layer in enumerate(base_model.layers):
-            if i < 17:  # Congelar 17/19 capas (más conservador que 15)
+            if i < 17:  # Freeze 17/19 layers (more conservative than 15)
                 layer.trainable = False
-            else:       # Solo entrenar últimas 2 capas conv
+            else:  # Only train last 2 conv layers
                 layer.trainable = True
 
-        # HEAD INSPIRADO EN LA VERSIÓN "HALF" EXITOSA pero MÁS CONSERVADOR
-        model = Sequential([
-            base_model,
-            layers.GlobalAveragePooling2D(),
-            layers.BatchNormalization(),
-
-            # Primera capa: MÁS PEQUEÑA que la versión "half" exitosa
-            layers.Dense(128, activation="relu",  # Reducido de 256 a 128
-                        kernel_regularizer=keras.regularizers.l2(0.003)),  # L2 más fuerte que 0.001
-            layers.BatchNormalization(),
-            layers.Dropout(0.5),  # Dropout más agresivo que 0.4
-
-            # Segunda capa: Tamaño intermedio para discriminación de enfermedades
-            layers.Dense(64, activation="relu",   # Reducido de 128 a 64
-                        kernel_regularizer=keras.regularizers.l2(0.003)),
-            layers.BatchNormalization(),
-            layers.Dropout(0.4),  # Dropout más agresivo que 0.3
-
-            # Tercera capa: NUEVA - para mejor discriminación entre enfermedades
-            layers.Dense(32, activation="relu",
-                        kernel_regularizer=keras.regularizers.l2(0.002)),  # L2 suave
-            layers.BatchNormalization(),
-            layers.Dropout(0.3),
-
-            # Capa final
-            layers.Dense(5, activation="softmax")
-        ])
+        # Head inspired by successful "half" version but more conservative
+        model = Sequential(
+            [
+                base_model,
+                layers.GlobalAveragePooling2D(),
+                layers.BatchNormalization(),
+                # First layer: smaller than successful "half" version
+                layers.Dense(
+                    128,
+                    activation="relu",  # Reduced from 256 to 128
+                    kernel_regularizer=keras.regularizers.l2(0.003),
+                ),  # Stronger L2 than 0.001
+                layers.BatchNormalization(),
+                layers.Dropout(0.5),  # More aggressive dropout than 0.4
+                # Second layer: intermediate size for disease discrimination
+                layers.Dense(
+                    64,
+                    activation="relu",  # Reduced from 128 to 64
+                    kernel_regularizer=keras.regularizers.l2(0.003),
+                ),
+                layers.BatchNormalization(),
+                layers.Dropout(0.4),  # More aggressive dropout than 0.3
+                # Third layer: NEW - for better disease discrimination
+                layers.Dense(
+                    32,
+                    activation="relu",
+                    kernel_regularizer=keras.regularizers.l2(0.002),
+                ),  # Gentle L2
+                layers.BatchNormalization(),
+                layers.Dropout(0.3),
+                # Final layer
+                layers.Dense(5, activation="softmax"),
+            ]
+        )
 
         print("   🔒 Capas congeladas: 17/19 (ultra-conservador)")
         print("   🧠 Head: 128→64→32→5 (anti-overfitting + discriminación)")
@@ -195,33 +220,38 @@ def build_vgg16_model():
         print("   💧 Dropout: 0.5→0.4→0.3 (muy agresivo)")
 
     else:
-        # CONFIGURACIÓN ORIGINAL EXITOSA para dataset pequeño/mediano
+        # Successful original configuration for small/medium dataset
         print("⚙️  Aplicando configuración EXITOSA para dataset pequeño/mediano...")
 
         for i, layer in enumerate(base_model.layers):
-            if i < 15:  # Configuración original exitosa
+            if i < 15:  # Successful original configuration
                 layer.trainable = False
             else:
                 layer.trainable = True
 
-        model = Sequential([
-            base_model,
-            layers.GlobalAveragePooling2D(),
-            layers.BatchNormalization(),
-
-            # Configuración que funcionó bien con "half"
-            layers.Dense(256, activation="relu",
-                        kernel_regularizer=keras.regularizers.l2(0.001)),
-            layers.BatchNormalization(),
-            layers.Dropout(0.4),
-
-            layers.Dense(128, activation="relu",
-                        kernel_regularizer=keras.regularizers.l2(0.001)),
-            layers.BatchNormalization(),
-            layers.Dropout(0.3),
-
-            layers.Dense(5, activation="softmax")
-        ])
+        model = Sequential(
+            [
+                base_model,
+                layers.GlobalAveragePooling2D(),
+                layers.BatchNormalization(),
+                # Configuration that worked well with "half"
+                layers.Dense(
+                    256,
+                    activation="relu",
+                    kernel_regularizer=keras.regularizers.l2(0.001),
+                ),
+                layers.BatchNormalization(),
+                layers.Dropout(0.4),
+                layers.Dense(
+                    128,
+                    activation="relu",
+                    kernel_regularizer=keras.regularizers.l2(0.001),
+                ),
+                layers.BatchNormalization(),
+                layers.Dropout(0.3),
+                layers.Dense(5, activation="softmax"),
+            ]
+        )
 
         print("   🔒 Capas congeladas: 15/19 (configuración exitosa)")
         print("   🧠 Head: 256→128→5 (probado exitosamente)")
@@ -230,29 +260,25 @@ def build_vgg16_model():
 
     return model
 
-def build_efficientnet_model():
-    """
-    Modelo EfficientNet BALANCEADO - Optimizado para performance sin sacrificar estabilidad.
 
-    VERSIÓN 2.0 - AJUSTES BALANCEADOS:
-    - Regularización L2 más suave (0.005/0.003 vs 0.01/0.005)
-    - Dropout menos agresivo (0.2 → 0.3 → 0.4 vs 0.3 → 0.4 → 0.5)
-    - Capas dense más grandes (768 → 384 → 192 vs 512 → 256 → 128)
-    - BatchNormalization momentum estándar (0.99 vs 0.9)
-    - Mejor balance estabilidad/performance
+def build_efficientnet_model():
+    """Build EfficientNet model balanced for performance without sacrificing stability.
+
+    Version 2.0 - Balanced adjustments:
+    - Gentler L2 regularization (0.005/0.003 vs 0.01/0.005)
+    - Less aggressive dropout (0.2 → 0.3 → 0.4 vs 0.3 → 0.4 → 0.5)
+    - Larger dense layers (768 → 384 → 192 vs 512 → 256 → 128)
+    - Standard BatchNormalization momentum (0.99 vs 0.9)
+    - Better stability/performance balance
     """
     print("🔧 Construyendo EfficientNet BALANCEADO (V2.0)...")
 
-    from keras.regularizers import l2
-
-    # Base model pre-entrenado
+    # Pre-trained base model
     base_model = EfficientNetB0(
-        include_top=False,
-        weights='imagenet',
-        input_shape=(IMG_SIZE, IMG_SIZE, 3)
+        include_top=False, weights="imagenet", input_shape=(IMG_SIZE, IMG_SIZE, 3)
     )
 
-    # Congelar base inicialmente
+    # Freeze base initially
     base_model.trainable = False
 
     inputs = keras.Input(shape=(IMG_SIZE, IMG_SIZE, 3))
@@ -263,127 +289,157 @@ def build_efficientnet_model():
     # Global Average Pooling
     x = layers.GlobalAveragePooling2D(name="global_avg_pool")(x)
 
-    # BatchNorm con momentum estándar (menos conservador)
+    # BatchNorm with standard momentum (less conservative)
     x = layers.BatchNormalization(momentum=0.99, name="bn_1")(x)
 
-    # Primera capa dense - AUMENTADA de 512 a 768
-    x = layers.Dropout(0.2, name="dropout_1")(x)  # Dropout REDUCIDO de 0.3 a 0.2
+    # First dense layer - INCREASED from 512 to 768
+    x = layers.Dropout(0.2, name="dropout_1")(x)  # Dropout REDUCED from 0.3 to 0.2
     x = layers.Dense(
-        768,  # AUMENTADO de 512 a 768
-        activation='relu',
-        kernel_regularizer=l2(0.005),  # L2 REDUCIDO de 0.01 a 0.005
-        name="dense_1"
+        768,  # INCREASED from 512 to 768
+        activation="relu",
+        kernel_regularizer=l2(0.005),  # L2 REDUCED from 0.01 to 0.005
+        name="dense_1",
     )(x)
 
     x = layers.BatchNormalization(momentum=0.99, name="bn_2")(x)
 
-    # Segunda capa dense - AUMENTADA de 256 a 384
-    x = layers.Dropout(0.3, name="dropout_2")(x)  # Dropout REDUCIDO de 0.4 a 0.3
+    # Second dense layer - INCREASED from 256 to 384
+    x = layers.Dropout(0.3, name="dropout_2")(x)  # Dropout REDUCED from 0.4 to 0.3
     x = layers.Dense(
-        384,  # AUMENTADO de 256 a 384
-        activation='relu',
-        kernel_regularizer=l2(0.005),  # L2 igual
-        name="dense_2"
+        384,  # INCREASED from 256 to 384
+        activation="relu",
+        kernel_regularizer=l2(0.005),  # L2 same
+        name="dense_2",
     )(x)
 
     x = layers.BatchNormalization(momentum=0.99, name="bn_3")(x)
 
-    # Tercera capa dense - AUMENTADA de 128 a 192
-    x = layers.Dropout(0.4, name="dropout_3")(x)  # Dropout REDUCIDO de 0.5 a 0.4
+    # Third dense layer - INCREASED from 128 to 192
+    x = layers.Dropout(0.4, name="dropout_3")(x)  # Dropout REDUCED from 0.5 to 0.4
     x = layers.Dense(
-        192,  # AUMENTADO de 128 a 192
-        activation='relu',
-        kernel_regularizer=l2(0.003),  # L2 MÁS SUAVE de 0.005 a 0.003
-        name="dense_3"
+        192,  # INCREASED from 128 to 192
+        activation="relu",
+        kernel_regularizer=l2(0.003),  # L2 GENTLER from 0.005 to 0.003
+        name="dense_3",
     )(x)
 
-    # Dropout final REDUCIDO
-    x = layers.Dropout(0.2, name="dropout_final")(x)  # REDUCIDO de 0.3 a 0.2
+    # Final dropout REDUCED
+    x = layers.Dropout(0.2, name="dropout_final")(x)  # REDUCED from 0.3 to 0.2
 
-    # Capa de clasificación
-    outputs = layers.Dense(NUM_CLASSES, activation='softmax', name="predictions")(x)
+    # Classification layer
+    outputs = layers.Dense(NUM_CLASSES, activation="softmax", name="predictions")(x)
 
     model = keras.Model(inputs, outputs, name="balanced_efficientnet")
 
-    print(f"✅ EfficientNet balanceado V2.0 construido:")
-    print(f"   📊 Parámetros totales: ~{model.count_params():,}")
-    print(f"   🔒 Regularización L2 suave: 0.005 → 0.005 → 0.003")
-    print(f"   💧 Dropout moderado: 0.2 → 0.3 → 0.4 → 0.2")
-    print(f"   🧠 Capas dense ampliadas: 768 → 384 → 192")
+    print("✅ EfficientNet balanceado V2.0 construido:")
+    print("   📊 Parámetros totales: ~{model.count_params():,}")
+    print("   🔒 Regularización L2 suave: 0.005 → 0.005 → 0.003")
+    print("   💧 Dropout moderado: 0.2 → 0.3 → 0.4 → 0.2")
+    print("   🧠 Capas dense ampliadas: 768 → 384 → 192")
 
     return model, base_model
 
-def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
-    """Compila el modelo con el optimizador, la función de pérdida y las métricas adecuadas."""
 
-    # Para VGG16: usar learning rate adaptativo anti-overfitting
+def compile_model(model: Model, learning_rate=LEARNING_RATE) -> Model:
+    """Compile the model with appropriate optimizer, loss function and metrics."""
+
+    # For VGG16: use adaptive anti-overfitting learning rate
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        from coffeedd.utilities.params_helpers import auto_type
         sample_size_typed = auto_type(SAMPLE_SIZE)
 
-        # Detectar si es dataset grande para aplicar learning rate ultra-conservador
-        if (sample_size_typed == 'full' or sample_size_typed == 'half' or
-            (isinstance(sample_size_typed, (int, float)) and
-             ((isinstance(sample_size_typed, float) and 0 < sample_size_typed <= 1 and int(sample_size_typed * 59807) >= 10000) or
-              (isinstance(sample_size_typed, int) and sample_size_typed >= 10000)))):
-            # LEARNING RATE ULTRA-CONSERVADOR para dataset grande (anti-overfitting)
-            learning_rate = 1e-5  # Extremadamente conservador vs 1e-4 standard
-            print(f"🛡️  VGG16 Anti-Overfitting: LR ultra-conservador {learning_rate} para dataset grande")
+        # Detect if large dataset to apply ultra-conservative learning rate
+        if (
+            sample_size_typed == "full"
+            or sample_size_typed == "half"
+            or (
+                isinstance(sample_size_typed, (int, float))
+                and (
+                    (
+                        isinstance(sample_size_typed, float)
+                        and 0 < sample_size_typed <= 1
+                        and int(sample_size_typed * 59807) >= 10000
+                    )
+                    or (
+                        isinstance(sample_size_typed, int)
+                        and sample_size_typed >= 10000
+                    )
+                )
+            )
+        ):
+            # Ultra-conservative learning rate for large dataset (anti-overfitting)
+            learning_rate = 1e-5  # Extremely conservative vs 1e-4 standard
+            print(
+                "🛡️  VGG16 Anti-Overfitting: LR ultra-conservador",
+                f"{learning_rate} para dataset grande",
+            )
         else:
-            # Learning rate moderado para dataset pequeño/mediano (configuración exitosa)
-            learning_rate = min(learning_rate, 0.0001)  # 1e-4 - configuración que funcionó bien
-            print(f"🔧 VGG16 configuración exitosa: LR conservador {learning_rate} para dataset pequeño/mediano")
+            # Moderate learning rate for small/medium dataset (successful configuration)
+            learning_rate = min(
+                learning_rate, 0.0001
+            )  # 1e-4 - configuration that worked well
+            print(
+                "🔧 VGG16 configuración exitosa: LR conservador",
+                f"{learning_rate} para dataset pequeño/mediano",
+            )
 
     model.compile(
         optimizer=keras.optimizers.Adam(
             learning_rate=learning_rate,
-            beta_1=0.9,      # Momentum conservador
+            beta_1=0.9,  # Conservative momentum
             beta_2=0.999,
-            epsilon=1e-07,   # Estabilidad numérica
-            clipnorm=1.0     # Gradient clipping para evitar explosión
+            epsilon=1e-07,  # Numerical stability
+            clipnorm=1.0,  # Gradient clipping to prevent explosion
         ),
-        loss='categorical_crossentropy',
+        loss="categorical_crossentropy",
         metrics=[
-            'accuracy',
-            keras.metrics.Recall(name='recall'),
-            keras.metrics.Precision(name='precision'),
-            DiseaseRecallMetric(),  # Nueva métrica personalizada para recall por enfermedad
-            keras.metrics.AUC(name='auc')
-        ]
+            "accuracy",
+            keras.metrics.Recall(name="recall"),
+            keras.metrics.Precision(name="precision"),
+            DiseaseRecallMetric(),  # Custom metric for disease recall
+            keras.metrics.AUC(name="auc"),
+        ],
     )
 
     print("✅ Modelo compilado")
     if MODEL_ARCHITECTURE.lower() == "efficientnet":
-        print("🔧 EfficientNet V2.0: Gradient clipping balanceado (clipnorm=0.7, clipvalue=0.7)")
+        print(
+            "🔧 EfficientNet V2.0: Gradient clipping balanceado (clipnorm=0.7, clipvalue=0.7)"
+        )
     print("\n📋 Resumen del modelo:")
     model.summary()
     return model
 
+
 def train_model(
-        model: Model,
-        train_dataset,
-        train_labels,
-        val_dataset,
-        val_labels,
-        class_weights: dict,
-        fine_tune: bool = True
+    model: Model,
+    train_dataset,
+    train_labels,
+    val_dataset,
+    val_labels,
+    class_weights: dict,
+    fine_tune: bool = True,
 ) -> Tuple[Model, dict]:
-    """Entrena el modelo en dos fases:
-    Fase 1: Entrenamiento con EfficientNet congelado (15 epochs)
+    """Train the model with two-phase approach.
+
+    Phase 1: Training with frozen base model (15 epochs)
+
     Args:
-        model (Model): Modelo Keras a entrenar.
-        train_dataset: Dataset de entrenamiento.
-        val_dataset: Dataset de validación.
-        val_labels: Etiquetas de validación (para métricas personalizadas).
-        class_weights (dict): Pesos de clase para manejar el desbalance.
-        fine_tune (bool): Indica si se debe realizar fine-tuning en fase 2.
+        model: Keras model to train.
+        train_dataset: Training dataset.
+        train_labels: Training labels.
+        val_dataset: Validation dataset.
+        val_labels: Validation labels for custom metrics.
+        class_weights: Class weights to handle imbalance.
+        fine_tune: Whether to perform fine-tuning in phase 2.
+
     Returns:
-        Tuple[Model, dict]: Modelo entrenado y el historial de entrenamiento.
+        Tuple of trained model and training history.
     """
-    checkpoint_filename = f'{LOCAL_REGISTRY_PATH}/checkpoints/best_model_{MODEL_ARCHITECTURE}_{SAMPLE_NAME}.keras'
+    checkpoint_filename = f"{LOCAL_REGISTRY_PATH}/checkpoints/best_model_{MODEL_ARCHITECTURE}_{SAMPLE_NAME}.keras"
 
     class RecallFocusedCallback(keras.callbacks.Callback):
-        """Callback personalizado para monitorear y reportar el recall de enfermedades cada 3 epochs."""
+        """Custom callback to monitor and report disease recall every 3 epochs."""
+
         def __init__(self, validation_data, class_names, val_labels):
             super().__init__()
             self.validation_data = validation_data
@@ -392,13 +448,13 @@ def train_model(
             self.best_disease_recall = 0.0
 
         def on_epoch_end(self, epoch, logs=None):
-            """Al final de cada x epoch, calcular y mostrar el recall por enfermedad."""
-            if (epoch + 1) % 3 == 0:  # Cada 3 epochs
-                # Predecir en validación
+            """Calculate and display disease recall at end of every 3rd epoch."""
+            if (epoch + 1) % 3 == 0:  # Every 3 epochs
+                # Predict on validation
                 y_pred = self.model.predict(self.validation_data, verbose=0)
                 y_pred_classes = np.argmax(y_pred, axis=1)
 
-                # Calcular recall de ENFERMEDADES (excluyendo healthy)
+                # Calculate recall for DISEASES (excluding healthy)
                 disease_recalls = []
                 print(f"\n{'='*50}")
                 print(f"📊 RECALL DETALLADO - Epoch {epoch + 1}")
@@ -409,25 +465,34 @@ def train_model(
                     if np.sum(mask) > 0:
                         recall = np.sum(y_pred_classes[mask] == idx) / np.sum(mask)
 
-                        if class_name != 'healthy':
+                        if class_name != "healthy":
                             disease_recalls.append(recall)
 
-                        emoji = "🌱" if class_name == 'healthy' else "🦠"
+                        emoji = "🌱" if class_name == "healthy" else "🦠"
                         print(f"  {emoji} {class_name:15s}: {recall:.4f}")
 
-                # Desplegar cuantas muestras de enfermedad fueron clasificadas correctamente por enfermedad
+                # Display how many disease samples were correctly classified by disease
                 print("\n✅ Muestras de enfermedad clasificadas correctamente:")
                 for idx, class_name in enumerate(self.class_names):
-                    if class_name != 'healthy':
+                    if class_name != "healthy":
                         mask = self.val_labels == idx
-                        total_should_be_tagged = np.sum(mask)  # Total que debería ser etiquetado
-                        correct_count = np.sum(y_pred_classes[mask] == idx)  # Correctamente clasificado
-                        percentage = (correct_count / total_should_be_tagged) * 100 if total_should_be_tagged > 0 else 0
-                        print(f"  🦠 {class_name:15s}: {correct_count} / {total_should_be_tagged} - ({percentage:.2f}%)")
+                        total_should_be_tagged = np.sum(
+                            mask
+                        )  # Total that should be tagged
+                        correct_count = np.sum(
+                            y_pred_classes[mask] == idx
+                        )  # Correctly classified
+                        percentage = (
+                            (correct_count / total_should_be_tagged) * 100
+                            if total_should_be_tagged > 0
+                            else 0
+                        )
+                        print(
+                            f"  🦠 {class_name:15s}: {correct_count} / {total_should_be_tagged}",
+                            f"- ({percentage:.2f}%)",
+                        )
 
-
-
-                # Recall promedio de enfermedades
+                # Average disease recall
                 avg_disease_recall = np.mean(disease_recalls) if disease_recalls else 0
                 print(f"\n🎯 Recall promedio enfermedades: {avg_disease_recall:.4f}")
 
@@ -435,65 +500,65 @@ def train_model(
                     self.best_disease_recall = avg_disease_recall
                     print("✨ ¡Nuevo mejor recall de enfermedades!")
 
-    # Configurar callbacks específicos para cada arquitectura
+    # Configure architecture-specific callbacks
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # VGG16: callbacks más conservadores para evitar oscilaciones
+        # VGG16: more conservative callbacks to avoid oscillations
         callbacks = [
             keras.callbacks.EarlyStopping(
-                monitor='val_loss',  # Para VGG16, monitorear loss es más estable
-                patience=8,          # Menos paciencia para evitar overfitting
-                mode='min',
+                monitor="val_loss",  # For VGG16, monitoring loss is more stable
+                patience=8,  # Less patience to avoid overfitting
+                mode="min",
                 restore_best_weights=True,
-                verbose=1
+                verbose=1,
             ),
             keras.callbacks.ReduceLROnPlateau(
-                monitor='val_loss',  # Usar loss para mayor estabilidad
-                factor=0.5,          # Reducción más gradual
-                patience=3,          # Reducir LR más rápido
+                monitor="val_loss",  # Use loss for greater stability
+                factor=0.5,  # More gradual reduction
+                patience=3,  # Reduce LR faster
                 min_lr=1e-7,
-                mode='min',
-                verbose=1
+                mode="min",
+                verbose=1,
             ),
             keras.callbacks.ModelCheckpoint(
                 checkpoint_filename,
-                monitor='val_loss',
-                mode='min',
+                monitor="val_loss",
+                mode="min",
                 save_best_only=True,
                 save_weights_only=True,
-                verbose=1
+                verbose=1,
             ),
-            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
+            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels),
         ]
     else:
-        # Callbacks originales para CNN y EfficientNet
+        # Original callbacks for CNN and EfficientNet
         callbacks = [
             keras.callbacks.EarlyStopping(
-                monitor='val_recall',  # Mantener recall como monitor principal
-                patience=15,  # Usar más paciencia para datasets pequeños
-                mode='max',
+                monitor="val_recall",  # Keep recall as primary monitor
+                patience=15,  # Use more patience for small datasets
+                mode="max",
                 restore_best_weights=True,
-                verbose=1
+                verbose=1,
             ),
             keras.callbacks.ReduceLROnPlateau(
-                monitor='val_recall',
+                monitor="val_recall",
                 factor=0.3,
                 patience=5,
                 min_lr=1e-8,
-                mode='max',
-                verbose=1
+                mode="max",
+                verbose=1,
             ),
             keras.callbacks.ModelCheckpoint(
                 checkpoint_filename,
-                monitor='val_recall',
-                mode='max',
+                monitor="val_recall",
+                mode="max",
                 save_best_only=True,
                 save_weights_only=True,
-                verbose=1
+                verbose=1,
             ),
-            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels)
+            RecallFocusedCallback(val_dataset, CLASS_NAMES, val_labels),
         ]
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     if MODEL_ARCHITECTURE.lower() == "vgg16":
         print("🚂 ENTRENAMIENTO VGG16: Transfer Learning conservador (20 epochs)")
         print("ℹ️  Estrategia: Entrenamiento gradual con learning rate bajo")
@@ -501,11 +566,11 @@ def train_model(
         print(f"🚂 FASE 1: Entrenando con {MODEL_ARCHITECTURE} congelado (15 epochs)")
     else:
         print("🚂 ENTRENAMIENTO: Modelo CNN simple (30 epochs)")
-    print("="*60)
+    print("=" * 60)
 
-    # Ajustar epochs según tipo de modelo y tamaño de dataset
+    # Adjust epochs by model type and dataset size
     if MODEL_ARCHITECTURE.lower() == "vgg16":
-        # VGG16: fewer epochs para evitar overfitting en 6K imágenes
+        # VGG16: fewer epochs to avoid overfitting on 6K images
         initial_epochs = 20
     elif MODEL_ARCHITECTURE.lower() == "cnn":
         initial_epochs = 30
@@ -518,19 +583,23 @@ def train_model(
         validation_data=val_dataset,
         class_weight=class_weights,
         callbacks=callbacks,
-        verbose=1
+        verbose=1,
     )
 
     print("✅ Fase 1 de entrenamiento completada")
-    print(f"📈 Recall máximo en validación durante fase 1: {max(history_phase1.history['val_recall']):.4f}")
+    print(
+        "📈 Recall máximo en validación durante fase 1:",
+        f"{max(history_phase1.history['val_recall']):.4f}",
+    )
 
-    # Para VGG16 con 6K imágenes: NO hacer fine-tuning para evitar overfitting
+    # For VGG16 with 6K images: NO fine-tuning to avoid overfitting
     should_finetune = (
-        MODEL_ARCHITECTURE.lower() == "efficientnet" and  # Solo EfficientNet
-        len(train_labels) >= 10000 and  # Dataset grande
-        len(history_phase1.history['val_accuracy']) > 0 and
-        max(history_phase1.history['val_accuracy']) > 0.60 and  # Umbral mínimo de accuracy
-        fine_tune
+        MODEL_ARCHITECTURE.lower() == "efficientnet"  # Only EfficientNet
+        and len(train_labels) >= 10000  # Large dataset
+        and len(history_phase1.history["val_accuracy"]) > 0
+        and max(history_phase1.history["val_accuracy"])
+        > 0.60  # Minimum accuracy threshold
+        and fine_tune
     )
 
     if should_finetune:
@@ -541,73 +610,84 @@ def train_model(
             train_dataset,
             val_dataset,
             class_weights,
-            callbacks
+            callbacks,
         )
         combined_history = combine_histories(history_phase1, history_phase2)
     else:
         if MODEL_ARCHITECTURE.lower() == "vgg16":
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("ℹ️  VGG16: No fine-tuning para dataset de 6K imágenes")
             print("ℹ️  Transfer learning con capas finales entrenables es suficiente")
-            print("="*60)
+            print("=" * 60)
         elif MODEL_ARCHITECTURE != "cnn":
-            print("\n" + "="*60)
-            print(f"⚠️  FASE 2: Saltando fine-tuning (dataset pequeño: {len(train_labels)} imágenes)")
-            print("="*60)
+            print("\n" + "=" * 60)
+            print(
+                f"⚠️  FASE 2: Saltando fine-tuning (dataset pequeño: {len(train_labels)} imágenes)"
+            )
+            print("=" * 60)
             print("ℹ️  Se requieren al menos 10,000 imágenes para fine-tuning seguro.")
-            print("ℹ️  El modelo se mantiene con la base congelada (solo la cabeza entrenada).")
+            print(
+                "ℹ️  El modelo se mantiene con la base congelada (solo la cabeza entrenada)."
+            )
         else:
-            print("\n" + "="*60)
+            print("\n" + "=" * 60)
             print("ℹ️  Modelo CNN simple: No requiere fine-tuning")
-            print("="*60)
+            print("=" * 60)
 
-        # Crear un history_phase2 vacío para evitar errores
+        # Create empty history_phase2 to avoid errors
         combined_history = history_phase1
 
     return model, combined_history
 
+
 def fine_tune_model(
-        model: Model,
-        base_model,
-        history_phase1,
-        train_dataset,
-        val_dataset,
-        class_weights: dict,
-        callbacks
-        ):
-    """Realiza fine-tuning del modelo descongelando las últimas capas de EfficientNet.
+    model: Model,
+    base_model,
+    history_phase1,
+    train_dataset,
+    val_dataset,
+    class_weights: dict,
+    callbacks,
+):
+    """Perform fine-tuning by unfreezing the last layers of EfficientNet.
+
     Args:
-        model (Model): Modelo Keras a entrenar.
-        base_model: La base EfficientNet del modelo.
-        history_phase1: Historial del entrenamiento previo.
-        train_dataset: Dataset de entrenamiento.
-        val_dataset: Dataset de validación.
-        class_weights (dict): Pesos de clase para manejar el desbalance.
-        callbacks: Callbacks para el entrenamiento.
+        model: Keras model to train.
+        base_model: The EfficientNet base of the model.
+        history_phase1: Previous training history.
+        train_dataset: Training dataset.
+        val_dataset: Validation dataset.
+        class_weights: Class weights to handle imbalance.
+        callbacks: Callbacks for training.
+
     Returns:
-        Tuple[Model, dict]: Modelo entrenado y el historial de entrenamiento.
+        Tuple of trained model and training history.
     """
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     if MODEL_ARCHITECTURE.lower() == "efficientnet":
         print("🔥 FASE 2: Fine-tuning BALANCEADO (EfficientNet V2.0)")
         print("🎯 8 capas finales para mejor performance manteniendo estabilidad")
     else:
         print("🔥 FASE 2: Fine-tuning (descongelando últimas 15 capas)")
-    print("="*60)
-    print(f"ℹ️  Mejor val_accuracy en Fase 1: {max(history_phase1.history['val_accuracy']):.3f}")
+    print("=" * 60)
+    print(
+        f"ℹ️  Mejor val_accuracy en Fase 1: {max(history_phase1.history['val_accuracy']):.3f}"
+    )
 
-    # Verificar estabilidad antes de fine-tuning para EfficientNet
+    # Verify stability before fine-tuning for EfficientNet
     if MODEL_ARCHITECTURE.lower() == "efficientnet":
-        val_loss_history = history_phase1.history['val_loss']
+        val_loss_history = history_phase1.history["val_loss"]
         best_val_loss = min(val_loss_history)
-        recent_val_loss = val_loss_history[-3:]  # Últimas 3 epochs
+        recent_val_loss = val_loss_history[-3:]  # Last 3 epochs
 
-        print(f"📊 Análisis de estabilidad V2.0:")
+        print("📊 Análisis de estabilidad V2.0:")
         print(f"   Mejor val_loss: {best_val_loss:.4f}")
         print(f"   Val_loss reciente: {recent_val_loss}")
 
-        # Condiciones más permisivas para fine-tuning
-        if best_val_loss > 0.4 or any(loss > best_val_loss * 1.8 for loss in recent_val_loss):
+        # More permissive conditions for fine-tuning
+        if best_val_loss > 0.4 or any(
+            loss > best_val_loss * 1.8 for loss in recent_val_loss
+        ):
             print("⚠️  Modelo muestra inestabilidad - usando fine-tuning conservador")
             conservative_mode = True
         else:
@@ -616,21 +696,21 @@ def fine_tune_model(
     else:
         conservative_mode = False
 
-    # Descongelar base model
+    # Unfreeze base model
     base_model.trainable = True
 
-    # Fine-tuning BALANCEADO para EfficientNet V2.0
+    # Balanced fine-tuning for EfficientNet V2.0
     if MODEL_ARCHITECTURE.lower() == "efficientnet":
         if conservative_mode:
-            fine_tune_at = len(base_model.layers) - 5  # Solo 5 capas si hay inestabilidad
-            lr_divisor = 15  # Learning rate 15x más bajo
+            fine_tune_at = len(base_model.layers) - 5  # Only 5 layers if unstable
+            lr_divisor = 15  # Learning rate 15x lower
             print("🚨 Modo conservador: solo 5 capas finales")
         else:
-            fine_tune_at = len(base_model.layers) - 8  # 8 capas (vs 5 anterior)
-            lr_divisor = 10  # Learning rate 10x más bajo (vs 15-20)
+            fine_tune_at = len(base_model.layers) - 8  # 8 layers (vs 5 previous)
+            lr_divisor = 10  # Learning rate 10x lower (vs 15-20)
             print("🔧 Modo balanceado: 8 capas finales")
     else:
-        fine_tune_at = len(base_model.layers) - 15  # Valor original para otros modelos
+        fine_tune_at = len(base_model.layers) - 15  # Original value for other models
         lr_divisor = 10
 
     for layer in base_model.layers[:fine_tune_at]:
@@ -643,11 +723,11 @@ def fine_tune_model(
     print(f"🔥 Capas entrenables: {trainable_layers}")
     print(f"📊 Total capas: {len(model.layers)}")
 
-    # Learning rate específico para cada arquitectura
+    # Architecture-specific learning rate
     new_lr = LEARNING_RATE / lr_divisor
     print(f"📉 Learning rate reducido: {LEARNING_RATE} → {new_lr} (÷{lr_divisor})")
 
-    # Recompilar con configuraciones optimizadas por arquitectura
+    # Recompile with optimized configurations by architecture
     if MODEL_ARCHITECTURE.lower() == "efficientnet":
         model.compile(
             optimizer=keras.optimizers.Adam(
@@ -655,32 +735,33 @@ def fine_tune_model(
                 beta_1=0.9,
                 beta_2=0.999,
                 epsilon=1e-08,
-                clipnorm=0.5,    # Gradient clipping balanceado (0.5 vs 0.3)
-                clipvalue=0.5    # También clip por valor balanceado
+                clipnorm=0.5,  # Balanced gradient clipping (0.5 vs 0.3)
+                clipvalue=0.5,  # Also clip by balanced value
             ),
-            loss='categorical_crossentropy',
+            loss="categorical_crossentropy",
             metrics=[
-                'accuracy',
-                keras.metrics.Recall(name='recall'),
-                keras.metrics.Precision(name='precision'),
+                "accuracy",
+                keras.metrics.Recall(name="recall"),
+                keras.metrics.Precision(name="precision"),
                 DiseaseRecallMetric(),
-                keras.metrics.AUC(name='auc')
-            ]
+                keras.metrics.AUC(name="auc"),
+            ],
         )
-        print("🔧 EfficientNet V2.0: Gradient clipping balanceado (0.5) para fine-tuning")
+        print(
+            "🔧 EfficientNet V2.0: Gradient clipping balanceado (0.5) para fine-tuning"
+        )
     else:
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=new_lr),
-            loss='categorical_crossentropy',
+            loss="categorical_crossentropy",
             metrics=[
-                'accuracy',
-                keras.metrics.Recall(name='recall'),  # Recall general
-                keras.metrics.Precision(name='precision'),
-                DiseaseRecallMetric(),  # Recall específico de enfermedades
-                keras.metrics.AUC(name='auc')
-            ]
+                "accuracy",
+                keras.metrics.Recall(name="recall"),  # General recall
+                keras.metrics.Precision(name="precision"),
+                DiseaseRecallMetric(),  # Disease-specific recall
+                keras.metrics.AUC(name="auc"),
+            ],
         )
-
 
     history_phase2 = model.fit(
         train_dataset,
@@ -689,37 +770,45 @@ def fine_tune_model(
         validation_data=val_dataset,
         class_weight=class_weights,
         callbacks=callbacks,
-        verbose=1
+        verbose=1,
     )
 
     return model, history_phase2
 
+
 def evaluate_model(
-        model: Model,
-        test_dataset,
-        test_labels,
-        get_confusion_matrix: bool = False,
-        get_false_negatives_analysis: bool = True
-    ) -> Tuple[Model, dict]:
-    """
-    Evalúa el modelo en un dataset dado.
+    model: Model,
+    test_dataset,
+    test_labels,
+    get_confusion_matrix: bool = False,
+    get_false_negatives_analysis: bool = True,
+) -> Tuple[Model, dict]:
+    """Evaluate the model on a given dataset.
+
     Args:
-        model (Model): Modelo Keras a evaluar.
-        test_dataset: Dataset de test.
-        test_labels: Etiquetas reales del test set.
+        model: Keras model to evaluate.
+        test_dataset: Test dataset.
+        test_labels: True labels from test set.
+        get_confusion_matrix: Whether to generate confusion matrix.
+        get_false_negatives_analysis: Whether to perform false negatives analysis.
+
     Returns:
-        Tuple[Model, dict]: Resultados de la evaluación.
+        Tuple of evaluation results.
     """
 
     if model is None:
-        print(Fore.RED + "❌ Modelo no está definido. No se puede evaluar." + Style.RESET_ALL)
+        print(
+            Fore.RED
+            + "❌ Modelo no está definido. No se puede evaluar."
+            + Style.RESET_ALL
+        )
         return None
 
     model_name = MODEL_NAME
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🧪 EVALUACIÓN FINAL EN TEST SET")
-    print("="*60)
+    print("=" * 60)
 
     # Evaluar en test
     test_results = model.evaluate(test_dataset, verbose=1)
@@ -731,66 +820,86 @@ def evaluate_model(
     y_pred_test = model.predict(test_dataset, verbose=1)
     y_pred_test_classes = np.argmax(y_pred_test, axis=1)
 
-    # Identificar clases presentes en test
+    # Identify classes present in test
     unique_test_classes = np.unique(test_labels)
     print(f"\nClases presentes en test set: {unique_test_classes}")
 
-    # Verificar si todas las clases están presentes
+    # Check if all classes are present
     missing_classes = set(range(NUM_CLASSES)) - set(unique_test_classes)
     if missing_classes:
-        print(f"⚠️  Clases ausentes en test: {[CLASS_NAMES[i] for i in missing_classes]}")
+        print(
+            f"⚠️  Clases ausentes en test: {[CLASS_NAMES[i] for i in missing_classes]}"
+        )
 
     # Classification report
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📊 CLASSIFICATION REPORT")
-    print("="*60)
+    print("=" * 60)
 
-    # Opción: Especificar solo las clases presentes (recomendado para muestras pequeñas)
+    # Option: Specify only present classes (recommended for small samples)
     if len(unique_test_classes) < NUM_CLASSES:
-        # Usar solo nombres de clases presentes
+        # Use only names of present classes
         target_names_present = [CLASS_NAMES[i] for i in unique_test_classes]
-        print(classification_report(test_labels, y_pred_test_classes,
-                                labels=unique_test_classes,
-                                target_names=target_names_present,
-                                digits=4))
-        print(f"\n⚠️  Nota: Solo se muestran las {len(unique_test_classes)} clases presentes en el test set.")
+        print(
+            classification_report(
+                test_labels,
+                y_pred_test_classes,
+                labels=unique_test_classes,
+                target_names=target_names_present,
+                digits=4,
+            )
+        )
+        print(
+            f"\n⚠️  Nota: Solo se muestran las {len(unique_test_classes)}",
+            "clases presentes en el test set.",
+        )
     else:
-        # Todas las clases presentes, usar reporte completo
-        print(classification_report(test_labels, y_pred_test_classes,
-                                target_names=CLASS_NAMES,
-                                digits=4))
+        # All classes present, use complete report
+        print(
+            classification_report(
+                test_labels, y_pred_test_classes, target_names=CLASS_NAMES, digits=4
+            )
+        )
 
     if get_confusion_matrix:
-        # Matriz de confusión
-        cm = confusion_matrix(test_labels, y_pred_test_classes, labels=unique_test_classes)
+        # Confusion matrix
+        cm = confusion_matrix(
+            test_labels, y_pred_test_classes, labels=unique_test_classes
+        )
 
-        # Usar solo nombres de clases presentes para los ejes
+        # Use only names of present classes for axes
         axis_labels = [CLASS_NAMES[i] for i in unique_test_classes]
 
-        # Nombre descriptivo para la matriz de confusión
-        confusion_matrix_filename = f'{MODELS_PATH}/confusion_matrix_{model_name}.png'
+        # Descriptive name for confusion matrix
+        confusion_matrix_filename = f"{MODELS_PATH}/confusion_matrix_{model_name}.png"
 
         plt.figure(figsize=(12, 10))
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                    xticklabels=axis_labels, yticklabels=axis_labels,
-                    cbar_kws={'label': 'Count'})
-        plt.title(f'Matriz de Confusión - Test Set\n{model_name}',
-                fontsize=16, fontweight='bold')
-        plt.ylabel('Etiqueta Real', fontsize=12)
-        plt.xlabel('Predicción', fontsize=12)
-        plt.xticks(rotation=45, ha='right')
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=axis_labels,
+            yticklabels=axis_labels,
+            cbar_kws={"label": "Count"},
+        )
+        plt.title(
+            f"Matriz de Confusión - Test Set\n{model_name}",
+            fontsize=16,
+            fontweight="bold",
+        )
+        plt.ylabel("Etiqueta Real", fontsize=12)
+        plt.xlabel("Predicción", fontsize=12)
+        plt.xticks(rotation=45, ha="right")
         plt.yticks(rotation=0)
         plt.tight_layout()
-        plt.savefig(confusion_matrix_filename, dpi=300, bbox_inches='tight')
+        plt.savefig(confusion_matrix_filename, dpi=300, bbox_inches="tight")
         plt.show()
 
         print(f"💾 Matriz de confusión guardada: {confusion_matrix_filename}")
 
     if get_false_negatives_analysis:
-        # Análisis detallado de falsos negativos
-        false_negatives_analysis(
-            test_labels,
-            y_pred_test_classes
-        )
+        # Detailed false negatives analysis
+        false_negatives_analysis(test_labels, y_pred_test_classes)
 
     return test_results

@@ -1,11 +1,11 @@
 """
 Tests para params_helpers
 """
-import pytest
+
 from coffeedd.utilities.params_helpers import (
     auto_type,
     get_epochs_for_sample_size,
-    get_sample_name
+    get_sample_name,
 )
 
 
@@ -65,33 +65,33 @@ class TestGetSampleName:
     """Tests para la función get_sample_name"""
 
     def test_none_returns_full(self):
-        assert get_sample_name(None) == 'full'
+        assert get_sample_name(None) == "full"
 
     def test_string_full_returns_full(self):
-        assert get_sample_name('full') == 'full'
+        assert get_sample_name("full") == "full"
 
     def test_string_half_returns_half(self):
-        assert get_sample_name('half') == 'half'
+        assert get_sample_name("half") == "half"
 
     def test_float_percentages(self):
-        assert get_sample_name(1.0) == '100pct'
-        assert get_sample_name(0.5) == '50pct'
-        assert get_sample_name(0.1) == '10pct'
-        assert get_sample_name(0.25) == '25pct'
+        assert get_sample_name(1.0) == "100pct"
+        assert get_sample_name(0.5) == "50pct"
+        assert get_sample_name(0.1) == "10pct"
+        assert get_sample_name(0.25) == "25pct"
 
     def test_int_absolute_numbers(self):
-        assert get_sample_name(100) == '100'
-        assert get_sample_name(1000) == '1000'
-        assert get_sample_name(5000) == '5000'
+        assert get_sample_name(100) == "100"
+        assert get_sample_name(1000) == "1000"
+        assert get_sample_name(5000) == "5000"
 
     def test_edge_cases(self):
         # Float mayor a 1 se trata como número absoluto
-        assert get_sample_name(100.0) == '100'
+        assert get_sample_name(100.0) == "100"
 
         # Porcentajes pequeños
-        assert get_sample_name(0.01) == '1pct'
-        assert get_sample_name(0.05) == '5pct'
+        assert get_sample_name(0.01) == "1pct"
+        assert get_sample_name(0.05) == "5pct"
 
     def test_custom_strings(self):
-        assert get_sample_name('small') == 'small'
-        assert get_sample_name('test') == 'test'
+        assert get_sample_name("small") == "small"
+        assert get_sample_name("test") == "test"

@@ -1,19 +1,20 @@
 import os
 
-import pytest
 from google.cloud import storage
 
 from coffeedd.params import GCP_PROJECT, BUCKET_NAME
 
 
-class TestGcpSetup():
+class TestGcpSetup:
     def test_setup_key_env(self):
         """
         verify that `$GOOGLE_APPLICATION_CREDENTIALS` is defined
         """
 
         # verify env var presence
-        assert os.getenv("GOOGLE_APPLICATION_CREDENTIALS"), "GCP environment variable not defined"
+        assert os.getenv(
+            "GOOGLE_APPLICATION_CREDENTIALS"
+        ), "GCP environment variable not defined"
 
     def test_setup_key_path(self):
         """
@@ -47,7 +48,9 @@ class TestGcpSetup():
         client = storage.Client()
         project_id = client.project
 
-        assert env_project_id == project_id, f"GCP_PROJECT environmental variable differs from the activated GCP project ID"
+        assert (
+            env_project_id == project_id
+        ), "GCP_PROJECT environmental variable differs from the activated GCP project ID"
 
     def test_setup_bucket_name(self):
         """
@@ -59,4 +62,6 @@ class TestGcpSetup():
         try:
             client.get_bucket(env_bucket_name, timeout=10)
         except:
-            assert False, f"Your bucket named after your .env variable 'BUCKET_NAME' ({env_bucket_name}) could not be found. "
+            assert (
+                False
+            ), f"Your bucket named after your .env variable 'BUCKET_NAME' ({env_bucket_name}) could not be found. "

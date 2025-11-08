@@ -1,5 +1,10 @@
 import os
-from coffeedd.utilities.params_helpers import auto_type, get_epochs_for_sample_size, get_sample_name, get_model_name
+from coffeedd.utilities.params_helpers import (
+    auto_type,
+    get_epochs_for_sample_size,
+    get_sample_name,
+    get_model_name,
+)
 
 ##################  VARIABLES  ##################
 SAMPLE_SIZE = os.environ.get("SAMPLE_SIZE")
@@ -49,7 +54,7 @@ MODELS_PATH = os.path.join(
 
 # Carpeta para guardar registros
 LOCAL_REGISTRY_PATH = os.path.join(
-    os.environ.get('HOME', os.path.expanduser("~")),
+    os.environ.get("HOME", os.path.expanduser("~")),
     ".coffeedd",
     "mlops",
     "training_outputs",
@@ -70,7 +75,7 @@ IMG_PATTERNS = (
 # DATA_PATH = '../data/raw_data_224'
 
 
-CLASS_NAMES = ['healthy', 'cerscospora', 'leaf_rust', 'miner', 'phoma']
+CLASS_NAMES = ["healthy", "cerscospora", "leaf_rust", "miner", "phoma"]
 NUM_CLASSES = len(CLASS_NAMES)
 
 SUPPORTED_FORMATS = ("image/jpeg", "image/jpg", "image/png")
