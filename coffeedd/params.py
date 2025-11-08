@@ -25,7 +25,7 @@ LOCAL_DATA_PATH = os.path.join(
     "fermx3",
     "coffee-disease-detection",
     "data",
-    "processed_data_full",
+    "processed_data",
 )
 
 LOCAL_RAW_DATA_PATH = os.path.join(
