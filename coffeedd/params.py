@@ -49,7 +49,7 @@ MODELS_PATH = os.path.join(
 
 # Carpeta para guardar registros
 LOCAL_REGISTRY_PATH = os.path.join(
-    os.path.expanduser("~"),
+    os.environ.get('HOME', os.path.expanduser("~")),
     ".coffeedd",
     "mlops",
     "training_outputs",

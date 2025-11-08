@@ -113,3 +113,10 @@ reset_gcs_files:
 	-gsutil mb -p ${GCP_PROJECT} -l ${GCP_REGION} gs://${BUCKET_NAME}
 
 reset_all_files: reset_local_files reset_gcs_files
+
+#################### DOCKER COMMANDS ###################
+docker_build:
+	docker build -t coffeedd-api .
+
+docker_run: # you can test the API endpoints at http://localhost:8000/docs
+	docker run -p 8000:8000 coffeedd-api
