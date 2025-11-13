@@ -1,3 +1,5 @@
+"""Funciones para dividir datasets de imágenes en conjuntos de entrenamiento, validación y prueba."""
+
 from pathlib import Path
 import shutil
 import random

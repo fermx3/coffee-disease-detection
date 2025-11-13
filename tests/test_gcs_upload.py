@@ -5,13 +5,13 @@ Tests para la funcionalidad de subida a GCS
 from unittest.mock import patch, MagicMock
 import pytest
 import os
-import time
 from coffeedd.ml_logic.gcs_upload import (
     upload_latest_model_to_gcs,
     list_models_in_gcs,
     _verify_gcs_config,
-    _find_latest_model
+    _find_latest_model,
 )
+
 
 class TestGCSUpload:
 
@@ -19,10 +19,16 @@ class TestGCSUpload:
         """Test que dry_run funciona sin conectar a GCS"""
 
         # Mock para simular que existe un modelo
-        with patch('coffeedd.ml_logic.gcs_upload._find_latest_model') as mock_find:
-            with patch('coffeedd.ml_logic.gcs_upload._verify_gcs_config') as mock_verify:
-                with patch('coffeedd.ml_logic.gcs_upload._collect_model_metadata') as mock_metadata:
-                    with patch('coffeedd.ml_logic.gcs_upload._get_file_size') as mock_size:
+        with patch("coffeedd.ml_logic.gcs_upload._find_latest_model") as mock_find:
+            with patch(
+                "coffeedd.ml_logic.gcs_upload._verify_gcs_config"
+            ) as mock_verify:
+                with patch(
+                    "coffeedd.ml_logic.gcs_upload._collect_model_metadata"
+                ) as mock_metadata:
+                    with patch(
+                        "coffeedd.ml_logic.gcs_upload._get_file_size"
+                    ) as mock_size:
 
                         # Simular modelo encontrado (como Path o string)
                         mock_find.return_value = "/fake/path/model.h5"
@@ -31,7 +37,7 @@ class TestGCSUpload:
                             "file_name": "model.h5",
                             "file_size_mb": 15.5,
                             "model_type": "test",
-                            "upload_timestamp": "2024-01-01T12:00:00"
+                            "upload_timestamp": "2024-01-01T12:00:00",
                         }
                         mock_size.return_value = 15.5  # Mock del tamaño
 
@@ -62,13 +68,10 @@ class TestGCSUpload:
     def test_config_verification_complete(self):
         """Test verificación de configuración completa"""
 
-        test_env = {
-            'GCP_PROJECT': 'test-project',
-            'BUCKET_NAME': 'test-bucket'
-        }
+        test_env = {"GCP_PROJECT": "test-project", "BUCKET_NAME": "test-bucket"}
 
         with patch.dict(os.environ, test_env):
-            with patch('google.cloud.storage.Client') as mock_client:
+            with patch("google.cloud.storage.Client") as mock_client:
                 # Mock del cliente GCS
                 mock_bucket = MagicMock()
                 mock_bucket.exists.return_value = True
@@ -77,8 +80,8 @@ class TestGCSUpload:
                 result = _verify_gcs_config()
                 assert result == True
 
-    @patch('pathlib.Path.exists')
-    @patch('pathlib.Path.glob')
+    @patch("pathlib.Path.exists")
+    @patch("pathlib.Path.glob")
     def test_find_latest_model(self, mock_glob, mock_exists):
         """Test búsqueda del último modelo"""
 
@@ -101,8 +104,10 @@ class TestGCSUpload:
     def test_model_not_found(self):
         """Test cuando no se encuentra ningún modelo"""
 
-        with patch('coffeedd.ml_logic.gcs_upload._find_latest_model') as mock_find:
-            with patch('coffeedd.ml_logic.gcs_upload._verify_gcs_config') as mock_verify:
+        with patch("coffeedd.ml_logic.gcs_upload._find_latest_model") as mock_find:
+            with patch(
+                "coffeedd.ml_logic.gcs_upload._verify_gcs_config"
+            ) as mock_verify:
 
                 mock_find.return_value = None
                 mock_verify.return_value = True
@@ -115,16 +120,16 @@ class TestGCSUpload:
         """Test de debug para ver qué está pasando"""
 
         print("\n🔍 DEBUG: Variables de entorno actuales:")
-        gcs_vars = ['GCP_PROJECT', 'BUCKET_NAME', 'GOOGLE_APPLICATION_CREDENTIALS']
+        gcs_vars = ["GCP_PROJECT", "BUCKET_NAME", "GOOGLE_APPLICATION_CREDENTIALS"]
 
         for var in gcs_vars:
-            value = os.environ.get(var, 'NOT_SET')
+            value = os.environ.get(var, "NOT_SET")
             print(f"   {var}: {value}")
 
         with patch.dict(os.environ, {}, clear=True):
             print("\n🔍 DEBUG: Después de limpiar entorno:")
             for var in gcs_vars:
-                value = os.environ.get(var, 'NOT_SET')
+                value = os.environ.get(var, "NOT_SET")
                 print(f"   {var}: {value}")
 
             result = _verify_gcs_config()
@@ -137,12 +142,14 @@ class TestGCSIntegration:
     """Tests que requieren configuración real de GCS (opcionales)"""
 
     @pytest.mark.skipif(
-        not all([
-            os.environ.get('GCP_PROJECT'),
-            os.environ.get('BUCKET_NAME'),
-            os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-        ]),
-        reason="GCS credentials not configured"
+        not all(
+            [
+                os.environ.get("GCP_PROJECT"),
+                os.environ.get("BUCKET_NAME"),
+                os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
+            ]
+        ),
+        reason="GCS credentials not configured",
     )
     def test_real_gcs_connection(self):
         """Test real de conexión a GCS (solo si está configurado)"""
@@ -151,12 +158,14 @@ class TestGCSIntegration:
         assert result == True
 
     @pytest.mark.skipif(
-        not all([
-            os.environ.get('GCP_PROJECT'),
-            os.environ.get('BUCKET_NAME'),
-            os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-        ]),
-        reason="GCS credentials not configured"
+        not all(
+            [
+                os.environ.get("GCP_PROJECT"),
+                os.environ.get("BUCKET_NAME"),
+                os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
+            ]
+        ),
+        reason="GCS credentials not configured",
     )
     def test_list_models_real(self):
         """Test real de listado de modelos (solo si está configurado)"""
@@ -175,14 +184,11 @@ def test_manual_upload():
     Ejecutar con: pytest tests/test_gcs_upload.py::test_manual_upload -s
     """
 
-    if not all([
-        os.environ.get('GCP_PROJECT'),
-        os.environ.get('BUCKET_NAME')
-    ]):
+    if not all([os.environ.get("GCP_PROJECT"), os.environ.get("BUCKET_NAME")]):
         pytest.skip("Configuración de GCS no disponible")
 
     print("\n🧪 Test manual de subida a GCS")
-    print("="*50)
+    print("=" * 50)
 
     try:
         # Test de dry run

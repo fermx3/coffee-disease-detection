@@ -5,11 +5,11 @@ Script para probar el sistema de caché de modelos
 
 import os
 import time
-from colorama import Fore, Style
 
 # Configurar entorno de prueba
-os.environ['MODEL_ARCHITECTURE'] = 'vgg16'
-os.environ['MODEL_TARGET'] = 'local'
+os.environ["MODEL_ARCHITECTURE"] = "vgg16"
+os.environ["MODEL_TARGET"] = "local"
+
 
 def test_model_cache():
     """Prueba el sistema de caché de modelos"""
@@ -85,9 +85,10 @@ def test_model_cache():
     print(f"   • Aceleración del caché: {(load_time1/load_time2):.1f}x")
 
     if load_time2 < load_time1 * 0.1:  # Al menos 10x más rápido
-        print(f"   ✅ Caché funcionando correctamente")
+        print("   ✅ Caché funcionando correctamente")
     else:
-        print(f"   ⚠️  Caché puede no estar funcionando óptimamente")
+        print("   ⚠️  Caché puede no estar funcionando óptimamente")
+
 
 def test_cache_with_predictions():
     """Prueba el caché en el contexto de predicciones múltiples"""
@@ -100,7 +101,9 @@ def test_cache_with_predictions():
     from PIL import Image
 
     # Crear imagen dummy para prueba
-    dummy_img = Image.fromarray(np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8))
+    dummy_img = Image.fromarray(
+        np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8)
+    )
 
     # Múltiples predicciones para probar caché
     num_predictions = 3
@@ -121,21 +124,23 @@ def test_cache_with_predictions():
             break
 
     if len(times) > 1:
-        print(f"\n📊 Análisis de tiempos:")
+        print("\n📊 Análisis de tiempos:")
         print(f"   • Primera predicción: {times[0]:.2f}s")
         print(f"   • Predicciones siguientes: {[f'{t:.2f}s' for t in times[1:]]}")
 
         if times[0] > max(times[1:]) * 1.5:  # Primera carga debe ser más lenta
-            print(f"   ✅ Caché mejora tiempo en predicciones")
+            print("   ✅ Caché mejora tiempo en predicciones")
         else:
-            print(f"   📝 Tiempos similares (modelo ya en caché)")
+            print("   📝 Tiempos similares (modelo ya en caché)")
+
 
 if __name__ == "__main__":
     try:
         test_model_cache()
         test_cache_with_predictions()
-        print(f"\n🎉 Tests de caché completados!")
+        print("\n🎉 Tests de caché completados!")
     except Exception as e:
         print(f"\n❌ Error en tests: {e}")
         import traceback
+
         traceback.print_exc()

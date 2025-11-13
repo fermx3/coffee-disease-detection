@@ -3,23 +3,22 @@ Funciones para subir modelos a Google Cloud Storage
 """
 
 import os
+import json
 from pathlib import Path
 from datetime import datetime
 from google.cloud import storage
 from colorama import Fore, Style
-import json
 
 from coffeedd.params import (
     GCP_PROJECT,
     BUCKET_NAME,
     MODEL_ARCHITECTURE,
-    LOCAL_REGISTRY_PATH
+    LOCAL_REGISTRY_PATH,
 )
 
+
 def upload_latest_model_to_gcs(
-    model_version: str = None,
-    include_metadata: bool = True,
-    dry_run: bool = False
+    model_version: str = None, include_metadata: bool = True, dry_run: bool = False
 ) -> dict:
     """
     Sube el último modelo entrenado a Google Cloud Storage
@@ -34,7 +33,7 @@ def upload_latest_model_to_gcs(
     """
 
     print(Fore.CYAN + "\n☁️  SUBIENDO MODELO A GOOGLE CLOUD STORAGE" + Style.RESET_ALL)
-    print("="*60)
+    print("=" * 60)
 
     # 1. Verificar configuración GCS
     if not _verify_gcs_config():
@@ -60,26 +59,26 @@ def upload_latest_model_to_gcs(
     # 5. Generar nombre consistente del modelo
     model_type = metadata.get("model_type", "CNN") if metadata else "CNN"
     model_filename = f"model_{model_type}_{model_version}.keras"
-    
+
     # Detectar arquitectura para la estructura de carpetas
     architecture = None
-    if metadata and 'architecture' in metadata:
-        architecture = metadata['architecture']
-    elif metadata and 'model_type' in metadata:
+    if metadata and "architecture" in metadata:
+        architecture = metadata["architecture"]
+    elif metadata and "model_type" in metadata:
         # Compatibilidad con metadatos antiguos
-        if metadata['model_type'] == 'EfficientNet':
-            architecture = 'efficientnet'
-        elif metadata['model_type'] == 'VGG16':
-            architecture = 'vgg16'
+        if metadata["model_type"] == "EfficientNet":
+            architecture = "efficientnet"
+        elif metadata["model_type"] == "VGG16":
+            architecture = "vgg16"
         else:
-            architecture = 'cnn'
-    
+            architecture = "cnn"
+
     # 6. Definir rutas en GCS con arquitectura específica
     gcs_paths = _generate_gcs_paths(model_version, model_filename, architecture)
 
     # 7. Mostrar resumen antes de subir
     model_size = _get_file_size(latest_model_path)
-    print(f"\n📋 Resumen de subida:")
+    print("\n📋 Resumen de subida:")
     print(f"   • Archivo local: {latest_model_path}")
     print(f"   • Tamaño: {model_size:.2f} MB")
     print(f"   • Bucket: {BUCKET_NAME}")
@@ -97,7 +96,7 @@ def upload_latest_model_to_gcs(
             "local_path": str(latest_model_path),
             "gcs_paths": gcs_paths,
             "model_size_mb": model_size,
-            "metadata_fields": len(metadata)
+            "metadata_fields": len(metadata),
         }
 
     # 7. Subir a GCS
@@ -121,7 +120,7 @@ def upload_latest_model_to_gcs(
         "model_size_mb": model_size,
         "upload_results": upload_results,
         "verification_results": verification_results,
-        "metadata_fields": len(metadata)
+        "metadata_fields": len(metadata),
     }
 
 
@@ -134,29 +133,29 @@ def _verify_gcs_config() -> bool:
     """
 
     # Variables de entorno requeridas
-    required_vars = ['GCP_PROJECT', 'BUCKET_NAME']
+    required_vars = ["GCP_PROJECT", "BUCKET_NAME"]
 
-    print(f"🔍 DEBUG: Verificando variables de entorno...")
+    print("🔍 DEBUG: Verificando variables de entorno...")
 
     # Verificar que todas las variables existan y no estén vacías
     for var in required_vars:
         value = os.environ.get(var)
         print(f"   {var}: {value}")
 
-        if not value or value.strip() == '':
+        if not value or value.strip() == "":
             print(f"⚠️ Variable de entorno faltante o vacía: {var}")
             return False
 
-    print(f"✅ Variables de entorno configuradas correctamente")
+    print("✅ Variables de entorno configuradas correctamente")
 
     # Verificar que podemos conectar a GCS (solo si las variables están)
     try:
         from google.cloud import storage
 
-        project_id = os.environ.get('GCP_PROJECT')
-        bucket_name = os.environ.get('BUCKET_NAME')
+        project_id = os.environ.get("GCP_PROJECT")
+        bucket_name = os.environ.get("BUCKET_NAME")
 
-        print(f"🔍 DEBUG: Intentando conectar a GCS...")
+        print("🔍 DEBUG: Intentando conectar a GCS...")
         print(f"   Project: {project_id}")
         print(f"   Bucket: {bucket_name}")
 
@@ -185,16 +184,16 @@ def _find_latest_model() -> Path:
         return None
 
     model_files = []
-    
+
     # Buscar en directorio base (compatibilidad con modelos antiguos)
-    for pattern in ['*.h5', '*.keras', '*.weights.h5']:
+    for pattern in ["*.h5", "*.keras", "*.weights.h5"]:
         model_files.extend(list(models_base_dir.glob(pattern)))
-    
+
     # Buscar en subcarpetas de arquitectura
-    for arch_folder in ['cnn', 'vgg16', 'efficientnet']:
+    for arch_folder in ["cnn", "vgg16", "efficientnet"]:
         arch_dir = models_base_dir / arch_folder
         if arch_dir.exists():
-            for pattern in ['*.h5', '*.keras', '*.weights.h5']:
+            for pattern in ["*.h5", "*.keras", "*.weights.h5"]:
                 model_files.extend(list(arch_dir.glob(pattern)))
 
     if not model_files:
@@ -214,14 +213,15 @@ def _collect_model_metadata(model_path: Path) -> dict:
     # Intentar cargar el modelo para detectar su tipo
     try:
         import keras
-        if model_path.suffix == '.keras':
+
+        if model_path.suffix == ".keras":
             # Cargar solo la configuración para detectar tipo
             temp_model = keras.models.load_model(model_path, compile=False)
-            if any('efficientnet' in layer.name.lower() for layer in temp_model.layers):
+            if any("efficientnet" in layer.name.lower() for layer in temp_model.layers):
                 model_type = "EfficientNet"
-        elif model_path.suffix == '.h5':
+        elif model_path.suffix == ".h5":
             # Para archivos .h5, inferir del nombre si es posible
-            if 'efficientnet' in model_path.name.lower():
+            if "efficientnet" in model_path.name.lower():
                 model_type = "EfficientNet"
 
         # Buscar archivos de configuración que puedan tener la info
@@ -229,9 +229,10 @@ def _collect_model_metadata(model_path: Path) -> dict:
         for config_file in config_files:
             try:
                 import json
-                with open(config_file, 'r') as f:
+
+                with open(config_file, "r") as f:
                     config_data = json.load(f)
-                    if config_data.get('model_type') == 'EfficientNet':
+                    if config_data.get("model_type") == "EfficientNet":
                         model_type = "EfficientNet"
                         break
             except:
@@ -257,7 +258,7 @@ def _collect_model_metadata(model_path: Path) -> dict:
     if metrics_files:
         latest_metrics = max(metrics_files, key=lambda p: p.stat().st_mtime)
         try:
-            with open(latest_metrics, 'r') as f:
+            with open(latest_metrics, "r") as f:
                 metrics_data = json.load(f)
                 metadata["training_metrics"] = metrics_data
                 metadata["metrics_file"] = latest_metrics.name
@@ -275,17 +276,19 @@ def _collect_model_metadata(model_path: Path) -> dict:
     return metadata
 
 
-def _generate_gcs_paths(model_version: str, model_filename: str, architecture: str = None) -> dict:
+def _generate_gcs_paths(
+    model_version: str, model_filename: str, architecture: str = None
+) -> dict:
     """Genera las rutas en GCS para modelo y metadatos"""
     # Usar arquitectura específica del modelo, o la configurada por defecto
     arch_for_path = architecture or MODEL_ARCHITECTURE.lower()
-    
+
     base_path = f"models/{arch_for_path}"
 
     return {
         "model": f"{base_path}/v{model_version}/{model_filename}",
         "metadata": f"{base_path}/v{model_version}/metadata.json",
-        "version_folder": f"{base_path}/v{model_version}/"
+        "version_folder": f"{base_path}/v{model_version}/",
     }
 
 
@@ -304,7 +307,7 @@ def _upload_to_gcs(model_path: Path, metadata: dict, gcs_paths: dict) -> dict:
 
     try:
         # Subir modelo
-        print(f"📤 Subiendo modelo...")
+        print("📤 Subiendo modelo...")
         model_blob = bucket.blob(gcs_paths["model"])
         model_blob.upload_from_filename(str(model_path))
         results["model_uploaded"] = True
@@ -312,11 +315,10 @@ def _upload_to_gcs(model_path: Path, metadata: dict, gcs_paths: dict) -> dict:
 
         # Subir metadatos si existen
         if metadata:
-            print(f"📤 Subiendo metadatos...")
+            print("📤 Subiendo metadatos...")
             metadata_blob = bucket.blob(gcs_paths["metadata"])
             metadata_blob.upload_from_string(
-                json.dumps(metadata, indent=2),
-                content_type='application/json'
+                json.dumps(metadata, indent=2), content_type="application/json"
             )
             results["metadata_uploaded"] = True
             results["metadata_gcs_path"] = f"gs://{BUCKET_NAME}/{gcs_paths['metadata']}"
@@ -360,14 +362,16 @@ def list_models_in_gcs(limit: int = 10) -> list:
 
     models = []
     for blob in blobs:
-        if blob.name.endswith('.h5') or blob.name.endswith('.keras'):
-            models.append({
-                "name": blob.name,
-                "size_mb": blob.size / (1024 * 1024),
-                "created": blob.time_created,
-                "updated": blob.updated,
-                "gcs_path": f"gs://{BUCKET_NAME}/{blob.name}"
-            })
+        if blob.name.endswith(".h5") or blob.name.endswith(".keras"):
+            models.append(
+                {
+                    "name": blob.name,
+                    "size_mb": blob.size / (1024 * 1024),
+                    "created": blob.time_created,
+                    "updated": blob.updated,
+                    "gcs_path": f"gs://{BUCKET_NAME}/{blob.name}",
+                }
+            )
 
     # Ordenar por fecha de creación (más reciente primero)
     models.sort(key=lambda x: x["created"], reverse=True)

@@ -5,7 +5,9 @@ Test para verificar búsqueda de modelos local y GCS
 
 import sys
 import os
-sys.path.insert(0, '/Users/fernandorios/code/fermx3/coffee-disease-detection')
+
+sys.path.insert(0, "/Users/fernandorios/code/fermx3/coffee-disease-detection")
+
 
 def test_local_model_search():
     """Test de búsqueda local de modelos"""
@@ -25,19 +27,23 @@ def test_local_model_search():
         if latest_general:
             print(f"   ✅ Encontrado: {os.path.basename(latest_general)}")
             print(f"   📁 Ruta completa: {latest_general}")
-            print(f"   📊 Tamaño: {os.path.getsize(latest_general) / (1024*1024):.1f}MB")
+            print(
+                f"   📊 Tamaño: {os.path.getsize(latest_general) / (1024*1024):.1f}MB"
+            )
         else:
             print("   ❌ No se encontraron modelos")
 
         # Test 2: Búsqueda por arquitectura específica
-        architectures = ['cnn', 'vgg16', 'efficientnet']
+        architectures = ["cnn", "vgg16", "efficientnet"]
         for arch in architectures:
             print(f"\n2. Búsqueda específica - {arch}:")
             latest_arch = find_latest_model_by_architecture(models_dir, arch)
             if latest_arch:
                 print(f"   ✅ Encontrado: {os.path.basename(latest_arch)}")
                 print(f"   📁 Ruta completa: {latest_arch}")
-                print(f"   📊 Tamaño: {os.path.getsize(latest_arch) / (1024*1024):.1f}MB")
+                print(
+                    f"   📊 Tamaño: {os.path.getsize(latest_arch) / (1024*1024):.1f}MB"
+                )
             else:
                 print(f"   ⚠️  No se encontraron modelos para {arch}")
 
@@ -46,8 +52,10 @@ def test_local_model_search():
     except Exception as e:
         print(f"❌ Error en búsqueda local: {e}")
         import traceback
+
         traceback.print_exc()
         return False
+
 
 def test_gcs_model_search():
     """Test de búsqueda GCS de modelos (solo si está configurado)"""
@@ -80,7 +88,7 @@ def test_gcs_model_search():
             "models/efficientnet/",
             "models/cnn/v",
             "models/vgg16/v",
-            "models/efficientnet/v"
+            "models/efficientnet/v",
         ]
 
         all_models = []
@@ -91,9 +99,9 @@ def test_gcs_model_search():
 
             model_blobs = []
             for blob in blobs:
-                if not blob.name.endswith('/'):
-                    if blob.name.endswith(('.keras', '.h5', '.weights.h5')):
-                        if not blob.name.endswith('_config.json'):
+                if not blob.name.endswith("/"):
+                    if blob.name.endswith((".keras", ".h5", ".weights.h5")):
+                        if not blob.name.endswith("_config.json"):
                             if blob.size and blob.size > 1024 * 1024:  # > 1MB
                                 model_blobs.append(blob)
 
@@ -123,6 +131,7 @@ def test_gcs_model_search():
         print("   💡 Verifica configuración de GCP y credenciales")
         return False
 
+
 def test_model_loading():
     """Test de carga completa de modelo"""
     print("\n🔄 Testing complete model loading...")
@@ -136,7 +145,7 @@ def test_model_loading():
             print("   ⚠️  No se pudo cargar modelo (normal si no hay modelos)")
             return True
         else:
-            print(f"   ✅ Modelo cargado exitosamente")
+            print("   ✅ Modelo cargado exitosamente")
             print(f"   📊 Capas: {len(model.layers)}")
             print(f"   🏗️  Tipo: {type(model).__name__}")
             return True
@@ -144,6 +153,7 @@ def test_model_loading():
     except Exception as e:
         print(f"   ❌ Error en carga de modelo: {e}")
         return False
+
 
 if __name__ == "__main__":
     print("🔧 Test de búsqueda y carga de modelos")
@@ -160,7 +170,9 @@ if __name__ == "__main__":
     print(f"   🔄 Carga de modelo: {'✅' if success_loading else '❌'}")
 
     overall_success = success_local and success_gcs and success_loading
-    print(f"\n🎯 Estado general: {'✅ TODOS LOS TESTS PASARON' if overall_success else '❌ ALGUNOS TESTS FALLARON'}")
+    print(
+        f"\n🎯 Estado general: {'✅ TODOS LOS TESTS PASARON' if overall_success else '❌ ALGUNOS TESTS FALLARON'}"
+    )
 
     if overall_success:
         print("💡 El sistema de modelos está funcionando correctamente")

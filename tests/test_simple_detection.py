@@ -4,13 +4,18 @@ Test simple para verificar las funciones básicas
 """
 
 import sys
-sys.path.insert(0, '/Users/fernandorios/code/fermx3/coffee-disease-detection')
+
+sys.path.insert(0, "/Users/fernandorios/code/fermx3/coffee-disease-detection")
+
 
 def test_basic_functions():
     print("Testing basic imports...")
 
     try:
-        from coffeedd.ml_logic.registry_ml import detect_model_architecture, build_model_by_architecture
+        from coffeedd.ml_logic.registry_ml import (
+            detect_model_architecture,
+        )
+
         print("✅ Functions imported successfully")
 
         # Test detección básica
@@ -28,7 +33,9 @@ def test_basic_functions():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     test_basic_functions()

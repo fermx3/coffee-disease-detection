@@ -19,8 +19,6 @@ to stop running the api, run in the terminal:
 ctrl + c
 """
 
-
-
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from coffeedd.interface.main import pred
@@ -28,7 +26,7 @@ from coffeedd.params import SUPPORTED_FORMATS
 
 app = FastAPI(
     title="Coffee Disease Detection API",
-    description="API for detecting diseases in coffee plants using computer vision"
+    description="API for detecting diseases in coffee plants using computer vision",
 )
 
 # Allow Streamlit (or any localhost) to call us while developing
@@ -40,15 +38,14 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
+
 @app.get("/")
 def root():
     """
     Root endpoint - can be used to check if API is running
     """
-    return {
-        "status": "ok",
-        "message": "Welcome to the Coffee Disease Detection API!"
-    }
+    return {"status": "ok", "message": "Welcome to the Coffee Disease Detection API!"}
+
 
 @app.post("/predict")
 async def predict(
@@ -66,7 +63,7 @@ async def predict(
     if file.content_type not in SUPPORTED_FORMATS:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid format. Supported: {', '.join(SUPPORTED_FORMATS)}"
+            detail=f"Invalid format. Supported: {', '.join(SUPPORTED_FORMATS)}",
         )
 
     # 2. Leer imagen
@@ -93,23 +90,16 @@ async def predict(
         return result
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Prediction failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
 
 @app.get("/health")
 def health_check():
     """Check if the model is loaded and ready"""
     try:
         from coffeedd.interface.main import get_cached_model
+
         model = get_cached_model()
-        return {
-            "status": "healthy",
-            "model_loaded": model is not None
-        }
+        return {"status": "healthy", "model_loaded": model is not None}
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}

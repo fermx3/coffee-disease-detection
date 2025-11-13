@@ -4,19 +4,21 @@ Script de prueba para validar la carga de diferentes tipos de modelos
 Testea que registry_ml.py pueda cargar CNN, VGG16 y EfficientNet correctamente
 """
 
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 # Agregar el directorio del proyecto al path
-sys.path.insert(0, '/Users/fernandorios/code/fermx3/coffee-disease-detection')
+sys.path.insert(0, "/Users/fernandorios/code/fermx3/coffee-disease-detection")
+
 
 def test_model_detection_functions():
     """Test de las funciones de detección de arquitectura"""
     print("🧪 Testing model detection functions...")
 
-    from coffeedd.ml_logic.registry_ml import detect_model_architecture, build_model_by_architecture
+    from coffeedd.ml_logic.registry_ml import (
+        detect_model_architecture,
+        build_model_by_architecture,
+    )
 
     # Test detección por nombre de archivo
     test_cases = [
@@ -33,7 +35,7 @@ def test_model_detection_functions():
         assert result == expected, f"Expected {expected}, got {result}"
 
     # Test construcción de modelos
-    architectures = ['cnn', 'vgg16', 'efficientnet']
+    architectures = ["cnn", "vgg16", "efficientnet"]
     for arch in architectures:
         try:
             model = build_model_by_architecture(arch)
@@ -45,14 +47,18 @@ def test_model_detection_functions():
 
     print("✅ All detection functions passed!")
 
+
 def test_model_saving_and_loading():
     """Test de guardado y carga de modelos"""
     print("\n🧪 Testing model saving and loading...")
 
-    from coffeedd.ml_logic.model import build_simple_cnn_model, build_vgg16_model, build_efficientnet_model
-    from coffeedd.ml_logic.registry_ml import save_model, load_model
+    from coffeedd.ml_logic.model import (
+        build_simple_cnn_model,
+        build_vgg16_model,
+        build_efficientnet_model,
+    )
+    from coffeedd.ml_logic.registry_ml import save_model
     from coffeedd.params import LOCAL_REGISTRY_PATH
-    import time
 
     # Crear directorio de prueba
     test_models_dir = Path(LOCAL_REGISTRY_PATH) / "models"
@@ -79,9 +85,7 @@ def test_model_saving_and_loading():
 
             # Compilar modelo
             model.compile(
-                optimizer='adam',
-                loss='categorical_crossentropy',
-                metrics=['accuracy']
+                optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
             )
 
             print(f"      🏗️  {model_name} built: {len(model.layers)} layers")
@@ -97,10 +101,12 @@ def test_model_saving_and_loading():
         except Exception as e:
             print(f"      ❌ {model_name} test failed: {e}")
             import traceback
+
             traceback.print_exc()
             continue
 
     print("✅ Model tests completed!")
+
 
 def test_load_models():
     """Test de carga de modelos existentes"""
@@ -116,7 +122,9 @@ def test_load_models():
         return
 
     # Buscar modelos existentes
-    model_files = list(models_dir.glob("*.keras")) + list(models_dir.glob("*.weights.h5"))
+    model_files = list(models_dir.glob("*.keras")) + list(
+        models_dir.glob("*.weights.h5")
+    )
 
     if not model_files:
         print("   ⚠️  No model files found, skipping load test")
@@ -130,7 +138,7 @@ def test_load_models():
         model = load_model(compile_with_metrics=False)
 
         if model:
-            print(f"   ✅ Model loaded successfully!")
+            print("   ✅ Model loaded successfully!")
             print(f"      Layers: {len(model.layers)}")
             print(f"      Input shape: {model.input_shape}")
             print(f"      Output shape: {model.output_shape}")
@@ -140,7 +148,9 @@ def test_load_models():
     except Exception as e:
         print(f"   ❌ Load test failed: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 def main():
     """Ejecutar todos los tests"""
@@ -158,8 +168,10 @@ def main():
     except Exception as e:
         print(f"\n❌ TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

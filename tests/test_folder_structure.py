@@ -3,13 +3,12 @@
 Script para probar la nueva estructura de carpetas por arquitectura
 """
 
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 # Agregar el directorio del proyecto al path
-sys.path.insert(0, '/Users/fernandorios/code/fermx3/coffee-disease-detection')
+sys.path.insert(0, "/Users/fernandorios/code/fermx3/coffee-disease-detection")
+
 
 def test_folder_structure():
     """Test de la estructura de carpetas por arquitectura"""
@@ -23,7 +22,7 @@ def test_folder_structure():
         print(f"📁 Base models directory: {models_base_dir}")
 
         # Verificar que se pueden crear las carpetas de arquitectura
-        expected_folders = ['cnn', 'vgg16', 'efficientnet']
+        expected_folders = ["cnn", "vgg16", "efficientnet"]
 
         for arch in expected_folders:
             arch_dir = models_base_dir / arch
@@ -43,6 +42,7 @@ def test_folder_structure():
         print("\n🔍 Testing file search across architecture folders...")
 
         from coffeedd.ml_logic.gcs_upload import _find_latest_model
+
         latest = _find_latest_model()
         if latest:
             print(f"✅ Found latest model: {latest}")
@@ -54,7 +54,9 @@ def test_folder_structure():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 def test_gcs_paths():
     """Test de las rutas GCS con arquitecturas"""
@@ -77,7 +79,7 @@ def test_gcs_paths():
             print(f"   Folder: {paths['version_folder']}")
 
             # Verificar que contiene la arquitectura en la ruta
-            assert arch in paths['model'], f"Architecture {arch} not found in path"
+            assert arch in paths["model"], f"Architecture {arch} not found in path"
             print(f"   ✅ Architecture {arch} correctly included in path")
 
         print("✅ GCS paths test completed!")
@@ -85,13 +87,16 @@ def test_gcs_paths():
     except Exception as e:
         print(f"❌ GCS paths test failed: {e}")
         import traceback
+
         traceback.print_exc()
+
 
 def show_expected_structure():
     """Muestra la estructura esperada"""
     print("\n📋 ESTRUCTURA ESPERADA:")
-    print("="*50)
-    print("""
+    print("=" * 50)
+    print(
+        """
 LOCAL STRUCTURE:
 ~/.coffeedd/mlops/training_outputs/models/
 ├── cnn/
@@ -119,7 +124,9 @@ bucket/models/
     └── v20241101_145000/
         ├── model_EfficientNet_20241101_145000.keras
         └── metadata.json
-    """)
+    """
+    )
+
 
 def main():
     """Ejecutar todos los tests"""
@@ -139,8 +146,10 @@ def main():
     except Exception as e:
         print(f"\n❌ TEST FAILED: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

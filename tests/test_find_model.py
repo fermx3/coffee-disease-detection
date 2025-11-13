@@ -5,7 +5,9 @@ Test específico para la función find_latest_model_by_architecture
 
 import sys
 import os
-sys.path.insert(0, '/Users/fernandorios/code/fermx3/coffee-disease-detection')
+
+sys.path.insert(0, "/Users/fernandorios/code/fermx3/coffee-disease-detection")
+
 
 def test_find_latest_model():
     """Test la función find_latest_model_by_architecture"""
@@ -15,7 +17,7 @@ def test_find_latest_model():
 
     models_dir = os.path.join(LOCAL_REGISTRY_PATH, "models")
 
-    print(f"🔍 Testing find_latest_model_by_architecture")
+    print("🔍 Testing find_latest_model_by_architecture")
     print(f"📁 Base directory: {models_dir}")
 
     # Test 1: Buscar en todas las arquitecturas
@@ -28,14 +30,14 @@ def test_find_latest_model():
 
     # Test 2: Buscar específicamente EfficientNet
     print("\n2. Buscando específicamente EfficientNet:")
-    result_eff = find_latest_model_by_architecture(models_dir, 'efficientnet')
+    result_eff = find_latest_model_by_architecture(models_dir, "efficientnet")
     print(f"   Result: {result_eff}")
     if result_eff:
         print(f"   Type: {'File' if os.path.isfile(result_eff) else 'Directory'}")
         print(f"   Exists: {os.path.exists(result_eff)}")
 
     # Test 3: Listar contenido de directorio efficientnet
-    efficientnet_dir = os.path.join(models_dir, 'efficientnet')
+    efficientnet_dir = os.path.join(models_dir, "efficientnet")
     if os.path.exists(efficientnet_dir):
         print(f"\n3. Contenido de {efficientnet_dir}:")
         try:
@@ -53,6 +55,7 @@ def test_find_latest_model():
         print(f"\n3. Directorio {efficientnet_dir} no existe")
 
     return result_eff
+
 
 if __name__ == "__main__":
     print("🔧 Test de find_latest_model_by_architecture")
